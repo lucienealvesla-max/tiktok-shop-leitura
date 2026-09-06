@@ -1,0 +1,22 @@
+name: Leitura TikTok Shop
+version: "1.0.0"
+slug: tiktok_shop_leitura
+# Link que aparece na pagina do add-on, no Home Assistant.
+url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
+description: Le os numeros do TikTok todo dia as 21h e mostra o dashboard de desempenho
+arch:
+  - aarch64
+init: false
+# INGRESS, e nao porta exposta. Assim a tela herda o login do Home Assistant em
+# vez de ficar aberta atras do tunel do cloudflared.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:chart-line
+# /share sobrevive a reconstrucao do container. Guardar os dados dentro da
+# imagem apagaria o historico a cada atualizacao do add-on, e serie temporal
+# perdida nao se recupera depois.
+map:
+  - share:rw
+# Se o processo morrer, o HA sobe de novo: um relogio parado nao avisa que
+# parou, e cada dia sem leitura e um buraco.
+watchdog: "tcp://[HOST]:[PORT:8099]"

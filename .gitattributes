@@ -1,0 +1,4 @@
+# CRLF mata o run.sh dentro do container: o Home Assistant responde
+# "exec /run.sh: no such file or directory" - erro que parece arquivo
+# faltando, com o arquivo ali. Trave isso antes que morda alguem.
+* text=auto eol=lf

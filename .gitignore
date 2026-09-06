@@ -1,0 +1,3 @@
+# Lixo do Python. Nao tem funcao no add-on e so polui o historico.
+__pycache__/
+*.pyc

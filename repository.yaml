@@ -1,0 +1,6 @@
+---
+# O que o Home Assistant le quando voce adiciona este endereco em
+# Ajustes - Add-ons - Loja - Repositorios.
+name: Leitura TikTok Shop
+url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
+maintainer: lucienealvesla-max

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Desempenho · TikTok Shop</title>
+<style>
+:root{
+  --breu:#140E19;
+  --painel:#1D1422;
+  --painel2:#251A2C;
+  --sulco:#2C1F34;
+  --lampada:#F2B25C;
+  --rosa:#F2A2B0;
+  --texto:#F7F0F4;
+  --fraco:#A492AE;
+  --alerta:#F09A8C;
+  --bom:#8FD3A8;
+
+  --tecnica:"Bahnschrift","DIN Alternate","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --corpo:"Corbel","Candara","Optima","Segoe UI",system-ui,sans-serif;
+  --dado:"Cascadia Mono","Consolas",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{background:var(--breu)}
+body{
+  min-height:100vh;
+  background:radial-gradient(120% 80% at 50% -10%, #24182B 0%, transparent 60%), var(--breu);
+  color:var(--texto);font-family:var(--corpo);font-size:17px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;padding:26px 18px 70px;
+}
+.folha{max-width:980px;margin:0 auto}
+.topo{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+  padding-bottom:14px;border-bottom:1px solid var(--sulco);margin-bottom:22px;flex-wrap:wrap}
+.topo h1{font-family:var(--tecnica);font-size:26px;margin:0}
+.topo a{color:var(--fraco);text-decoration:none;font-family:var(--tecnica);
+  font-size:13px;letter-spacing:.14em;text-transform:uppercase}
+.topo a:hover{color:var(--rosa)}
+
+h2{font-family:var(--tecnica);font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--fraco);margin:30px 0 10px;font-weight:600}
+.cartao{background:var(--painel);border:1px solid var(--sulco);border-radius:12px;
+  padding:16px 18px;margin-bottom:12px}
+.numerao{font-family:var(--tecnica);font-size:32px;line-height:1.1}
+.rotulo{font-family:var(--tecnica);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--fraco);margin-top:4px}
+.sub{font-size:13px;color:var(--fraco);margin-top:8px;line-height:1.45}
+
+.linha{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:14px}
+.linha .nome{font-family:var(--dado);font-size:13px;width:104px;flex:none;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barra{flex:1;height:14px;background:var(--sulco);border-radius:4px;overflow:hidden}
+.barra i{display:block;height:100%;background:var(--rosa);border-radius:4px}
+.barra i.quente{background:var(--lampada)}
+.linha .qtd{font-family:var(--dado);font-size:13px;color:var(--fraco);width:126px;
+  flex:none;text-align:right}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-family:var(--tecnica);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--fraco);text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--sulco)}
+td{padding:7px 8px;border-bottom:1px solid rgba(44,31,52,.6)}
+td.n{font-family:var(--dado);text-align:right;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+
+.aviso{border-left:3px solid var(--lampada);background:var(--painel2);padding:12px 14px;
+  border-radius:0 8px 8px 0;margin:10px 0;font-size:15px}
+.aviso.ruim{border-left-color:var(--alerta)}
+.aviso b{color:var(--lampada)}
+.aviso.ruim b{color:var(--alerta)}
+.aviso.esperando{border-left-color:var(--fraco);color:var(--fraco)}
+.aviso.esperando b{color:var(--texto)}
+
+code{font-family:var(--dado);font-size:13px;background:var(--painel2);padding:3px 7px;
+  border-radius:4px;color:var(--lampada);word-break:break-all;display:inline-block;margin-top:3px}
+ol{padding-left:20px;margin:10px 0}
+ol li{margin:9px 0}
+.botao{display:inline-block;background:var(--rosa);color:#2A1020;border:none;border-radius:8px;
+  padding:10px 18px;font-family:var(--tecnica);font-size:14px;letter-spacing:.08em;
+  text-transform:uppercase;cursor:pointer;text-decoration:none}
+.botao:hover{background:var(--lampada)}
+.botao:disabled{opacity:.5;cursor:default}
+.bom{color:var(--bom)}
+#carregando{color:var(--fraco);font-size:15px}
+pre.resumo{background:var(--painel2);border:1px solid var(--sulco);border-radius:8px;
+  padding:14px;font-family:var(--dado);font-size:13px;line-height:1.6;
+  white-space:pre-wrap;color:var(--texto);margin:0}
+</style>
+</head>
+<body>
+<div class="folha">
+  <div class="topo">
+    <h1>Desempenho</h1>
+    <!-- Relativo de proposito: sob o Ingress do HA um "/" sai do add-on e cai
+         na raiz do proprio Home Assistant, e "./" fica dentro do mesmo lugar
+         nos dois servidores (painel.py e o do Pi). -->
+    <a href="./">&larr; painel</a>
+  </div>
+  <p id="carregando">Lendo…</p>
+  <div id="tudo" style="display:none"></div>
+</div>
+
+<script>
+var $ = function(id){ return document.getElementById(id); };
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];
+  });
+}
+function n(x, casas){
+  if(x === null || x === undefined) return "—";
+  return Number(x).toLocaleString("pt-BR", {minimumFractionDigits: casas || 0,
+                                            maximumFractionDigits: casas || 0});
+}
+function barras(itens, quente){
+  var maior = 0;
+  itens.forEach(function(i){ if(i.valor > maior) maior = i.valor; });
+  return itens.map(function(i, k){
+    var pct = maior ? (i.valor / maior) * 100 : 0;
+    return '<div class="linha"><span class="nome" title="' + esc(i.rotulo) + '">' +
+      esc(i.rotulo) + '</span>' +
+      '<span class="barra"><i class="' + (quente && quente(i, k) ? "quente" : "") +
+      '" style="width:' + pct.toFixed(1) + '%"></i></span>' +
+      '<span class="qtd">' + esc(i.texto) + '</span></div>';
+  }).join("");
+}
+
+/* Bloco que depende de histórico e ainda não tem: diz quantas leituras faltam,
+   em vez de aparecer vazio. Tela vazia sem explicação parece defeito. */
+function esperando(faltam, oque){
+  return '<div class="cartao"><div class="aviso esperando"><b>Faltam ' + faltam +
+    ' leitura(s).</b> ' + oque + ' só existe comparando leituras de dias diferentes — ' +
+    'o TikTok não guarda isso em lugar nenhum, então o painel constrói a série a partir ' +
+    'de agora.</div></div>';
+}
+
+/* QUAL PERFIL ESTA NA TELA. Ela tem mais de um, e o que funciona num publico
+   nao funciona no outro - somar esconderia justamente o que ela precisa ver.
+   A escolha fica no navegador, entao recarregar nao volta pro primeiro. */
+var contaEscolhida = "";
+try { contaEscolhida = localStorage.getItem("tiktok_conta") || ""; } catch(e){}
+
+function blocoPerfis(tk){
+  var cs = tk.contas || [];
+  if(!cs.length) return "";
+  var noPC = (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+  var h = '<div class="cartao"><div class="rotulo">Perfil</div>';
+  if(cs.length > 1){
+    h += '<p><select id="perfil">' + cs.map(function(c){
+      return '<option value="' + esc(c.open_id) + '"' +
+        (c.open_id === contaEscolhida ? ' selected' : '') + '>' +
+        esc(c.nome) + ' — ' + c.dias + ' dia(s) de histórico</option>';
+    }).join("") + '</select></p>';
+  } else {
+    h += '<div class="sub"><b>' + esc(cs[0].nome) + '</b> — ' + cs[0].dias +
+         ' dia(s) de histórico</div>';
+  }
+  /* Adicionar perfil e o mesmo "entrar" de sempre: como a conta se identifica
+     sozinha pelo open_id, entrar de novo SOMA em vez de substituir. */
+  /* href absoluto aqui, sem problema: so aparece quando noPC e verdadeiro
+     (hostname e localhost/127.0.0.1), e isso nunca acontece atras do
+     Ingress do Pi - o ramo "abra no computador" e' o unico que roda la. */
+  h += '<div class="sub">' + (noPC
+    ? '<a class="botao" style="padding:4px 10px;font-size:11px" ' +
+      'href="/tiktok/entrar">Adicionar outro perfil</a> ' +
+      'Saia da outra conta no navegador antes, senão o TikTok repete esta.'
+    : 'Para adicionar outro perfil, abra esta página no computador.') +
+    '</div></div>';
+  return h;
+}
+
+function ligarSeletorDePerfil(){
+  var s = $("perfil");
+  if(!s) return;
+  s.onchange = function(){
+    contaEscolhida = s.value;
+    try { localStorage.setItem("tiktok_conta", contaEscolhida); } catch(e){}
+    carregar();
+  };
+}
+
+function blocoConexao(tk){
+  if(!tk.configurado){
+    return '<div class="cartao"><div class="rotulo">Falta ligar a API</div>' +
+      '<div class="sub">Tudo nesta tela sai da API do TikTok. Configurada uma vez, o painel ' +
+      'guarda uma leitura por dia e passa a mostrar o que o app não mostra.</div><ol>' +
+      '<li>Em <b>developers.tiktok.com</b>, crie um app do tipo <b>Desktop</b>.</li>' +
+      '<li>Adicione <b>Login Kit</b> e <b>Display API</b> (escopos <code>user.info.basic</code> ' +
+      'e <code>video.list</code>). O <code>video.list</code> só aparece depois do ' +
+      'Display API entrar.</li>' +
+      '<li>Endereço de retorno, em <b>Products → Login Kit → Desktop</b> (não é a caixa ' +
+      'de verificação de URL, que pede https e nunca aceita localhost):<br><code>' +
+      esc(tk.retorno || "") + '</code></li>' +
+      '<li>Deixe o app em <b>Sandbox</b> e adicione cada perfil em <b>Target users</b> — ' +
+      'perfil que não estiver ali recusa o login com <code>non_sandbox_target</code>.</li>' +
+      '<li>Grave a chave em <code>painel/tiktok.json</code>, reinicie o painel e recarregue ' +
+      'esta página <b>no computador</b>.</li></ol></div>';
+  }
+  if(!tk.conectado){
+    var noPC = (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+    // Mesmo caso do href absoluto em blocoPerfis(): so roda com noPC
+    // verdadeiro, e no Pi (atras do Ingress) isso nunca acontece.
+    return '<div class="cartao"><div class="rotulo">Falta autorizar</div>' +
+      (noPC ? '<p><a class="botao" href="/tiktok/entrar">Entrar no TikTok</a></p>'
+            : '<div class="aviso"><b>Isto precisa ser feito no computador.</b> O TikTok ' +
+              'devolve a autorização para <code>localhost</code>, que no celular é o ' +
+              'próprio celular.</div>') + '</div>';
+  }
+  return '<div class="cartao"><div class="rotulo">Conectado, sem leitura ainda</div>' +
+    '<div class="sub">A primeira leitura já mostra metade dos painéis. Os outros precisam ' +
+    'de dias seguidos para comparar.</div>' +
+    /* MESMA GUARDA do bloco do resumo (ver desenhar()): este perfil pode
+       nao ter foto nenhuma ainda e cair aqui mesmo depois da migracao para
+       o Pi - achado numa revisao, com o perfil dela sem leitura nenhuma. */
+    (tk.dono_da_leitura === false
+      ? '<p class="sub">A leitura mora ' + (tk.leitura_em
+          ? 'em <a href="' + esc(tk.leitura_em) + '">' + esc(tk.leitura_em) + '</a>'
+          : 'noutra máquina') + ', que fica ligada o dia inteiro.</p>'
+      : '<p><button class="botao" id="puxar">Ler agora</button>' +
+        '<span id="puxar-recado" class="sub"></span></p>') +
+    '<div class="sub">A leitura traz a conta inteira, do primeiro vídeo até hoje — ' +
+    'leva uns minutos. Com a leitura automática ligada, isso acontece sozinho às 21h.' +
+    '</div></div>';
+}
+
+function desenhar(d){
+  var tk = d.tiktok || {};
+  if(!d.tem_dados){
+    $("tudo").innerHTML = '<h2>Conexão com o TikTok</h2>' +
+      blocoPerfis(tk) + blocoConexao(tk);
+    ligarSeletorDePerfil();
+    ligarPuxar();
+  ligarDiario();
+    $("carregando").style.display = "none";
+    $("tudo").style.display = "";
+    return;
+  }
+
+  var h = blocoPerfis(tk);
+
+  /* ---------- o resumo: é o que eu leio pra recomendar o próximo vídeo ---------- */
+  h += '<h2>Resumo</h2><div class="cartao">' +
+    '<pre class="resumo">' + esc(d.resumo) + '</pre>' +
+    '<div class="sub">' + n(d.videos) + ' vídeos · ' + d.dias_de_historico +
+    /* QUEM LÊ. O token do TikTok é rotativo: duas máquinas renovando derrubam
+       uma a outra. Quando esta não é a dona, o botão não some — sumir pareceria
+       defeito — ele vira o recado de onde a leitura mora agora. */
+    ' dia(s) de histórico &nbsp; ' + (tk.dono_da_leitura === false
+      ? '<span class="sub">A leitura mora ' + (tk.leitura_em
+          ? 'em <a href="' + esc(tk.leitura_em) + '">' + esc(tk.leitura_em) + '</a>'
+          : 'noutra máquina') + ', que fica ligada o dia inteiro.</span>'
+      : '<button class="botao" id="puxar" ' +
+        'style="padding:6px 12px;font-size:12px">Ler agora</button>') +
+    '<span id="puxar-recado"></span></div>' +
+    /* A leitura diaria e o que faz a serie existir: um dia sem leitura e um
+       buraco que nao se recupera depois. Por isso o controle fica aqui em cima,
+       junto do resumo, e nao escondido numa tela de configuracao. */
+    '<div class="sub">' + (tk.dono_da_leitura === false
+      ? 'A leitura automática está na outra máquina.'
+      /* SEM AGENDADOR NESTA MAQUINA (Raspberry): nao existe Agendador de
+         Tarefas do Windows aqui pra ligar/desligar, entao o botao que chama
+         api/tiktok/diario/ligar - rota que so existe no painel.py - daria
+         404 calado. O painel dela nunca manda esta chave, entao este ramo
+         nunca roda la e as duas linhas de baixo continuam intocadas. */
+      : (tk.agendador === false
+      ? '<b class="bom">Lendo sozinho todo dia às 21h.</b>'
+      : (tk.leitura_diaria
+      ? '<b class="bom">Lendo sozinho todo dia às 21h.</b> ' +
+        '<button class="botao" id="diario-parar" style="padding:4px 10px;font-size:11px">' +
+        'desligar</button>'
+      : 'Leitura automática <b>desligada</b> — cada dia sem leitura é um buraco na série ' +
+        'que não se recupera depois. ' +
+        '<button class="botao" id="diario-ligar" style="padding:4px 10px;font-size:11px">' +
+        'ligar</button>'))) +
+    ' <span id="diario-recado"></span></div>' +
+    /* DE QUE VERSAO ISTO FOI CONSTRUIDO. So aparece no servidor do Raspberry,
+       onde os arquivos sao copiados na mao e podem ficar para tras sem aviso.
+       "Pagina nova conversando com servidor velho" ja custou uma rodada aqui. */
+    (tk.versao ? '<div class="sub">versão ' + esc(tk.versao) + '</div>' : '') +
+    '</div>';
+
+  /* ---------- acelerando ---------- */
+  h += '<h2>Acelerando agora</h2>';
+  if(!d.acelerando.pronto){
+    h += esperando(d.acelerando.faltam, "Saber o que está crescendo");
+  } else {
+    var a = d.acelerando.itens.filter(function(x){ return x.ganho_ultimo > 0; });
+    h += '<div class="cartao"><div class="sub">O app só mostra o total acumulado. Um vídeo ' +
+      'de 50 mil pode estar parado há duas semanas, e um de 3 mil pode ter ganhado 2 mil ' +
+      'ontem — lá os dois parecem o que não são.</div>' +
+      (a.length
+        ? '<table><tr><th>Vídeo</th><th class="n">Ganhou na última</th><th class="n">7 dias</th>' +
+          '<th class="n">Total</th></tr>' +
+          a.map(function(x){
+            return '<tr><td>' + esc(x.titulo || "(sem título)") + '</td>' +
+              '<td class="n bom">+' + n(x.ganho_ultimo) + '</td>' +
+              '<td class="n">+' + n(x.ganho_7d) + '</td>' +
+              '<td class="n">' + n(x.views) + '</td></tr>';
+          }).join("") + '</table>'
+        : '<div class="sub">Nenhum vídeo ganhou views desde a última leitura.</div>') +
+      '</div>';
+  }
+
+  /* ---------- ressurreições ---------- */
+  h += '<h2>Ressuscitou</h2>';
+  if(!d.ressurreicoes.pronto){
+    h += esperando(d.ressurreicoes.faltam, "Detectar vídeo antigo voltando a crescer");
+  } else if(!d.ressurreicoes.itens.length){
+    h += '<div class="cartao"><div class="sub">Nenhum vídeo antigo voltou a crescer. Quando ' +
+      'acontecer, aparece aqui no mesmo dia — o TikTok não avisa.</div></div>';
+  } else {
+    h += '<div class="cartao"><div class="aviso"><b>O TikTok revive vídeo antigo o tempo ' +
+      'todo e não avisa.</b> Sabendo hoje, dá para reagir enquanto ainda está subindo: ' +
+      'continuação, responder comentário, empurrar o link.</div>' +
+      '<table><tr><th>Vídeo</th><th class="n">Idade</th><th class="n">Ganhou agora</th>' +
+      '<th class="n">Ritmo anterior</th></tr>' +
+      d.ressurreicoes.itens.map(function(x){
+        return '<tr><td>' + esc(x.titulo) + '</td><td class="n">' + x.idade_dias + 'd</td>' +
+          '<td class="n bom">+' + n(x.ganho_ultimo) + '</td>' +
+          '<td class="n">' + n(x.ritmo_anterior) + '/dia</td></tr>';
+      }).join("") + '</table></div>';
+  }
+
+  /* ---------- contra a mediana ---------- */
+  var cm = d.contra_a_mediana || {};
+  if(cm.mediana){
+    h += '<h2>Contra a sua própria mediana</h2><div class="cartao">' +
+      '<div class="numerao">' + n(cm.mediana) + '</div>' +
+      '<div class="rotulo">mediana de views · ' + cm.amostra + ' vídeos</div>' +
+      '<div class="sub">O app mostra o número; não diz se é bom <b>para esta conta</b>. ' +
+      'Mediana e não média: um viral entre nove vídeos pequenos faria a média descrever um ' +
+      'vídeo que não existe.</div>' +
+      barras(cm.acima.map(function(x){
+        return {rotulo: x.titulo || "?", valor: x.views,
+                texto: n(x.views) + "  " + x.vezes_a_mediana + "x"};
+      }), function(i, k){ return k === 0; }) + '</div>';
+  }
+
+  /* ---------- compartilhamento ---------- */
+  var tc = d.compartilhamento || {};
+  if((tc.itens || []).length){
+    h += '<h2>Compartilhado por visualização</h2><div class="cartao">' +
+      '<div class="sub">É o sinal que mais anda junto com alcance — compartilhar é o que leva ' +
+      'o vídeo para fora da audiência atual. O app só ordena pelo total bruto, onde o vídeo ' +
+      'grande sempre ganha. Mediana dela: <b>' + n(tc.mediana, 2) + '%</b>.</div>' +
+      barras(tc.itens.map(function(x){
+        return {rotulo: x.titulo || "?", valor: x.taxa,
+                texto: x.taxa + "%  (" + n(x.views) + ")"};
+      }), function(i){ return i.valor >= (tc.mediana || 0) * 2; }) + '</div>';
+  }
+
+  /* ---------- assuntos ---------- */
+  var tm = d.temas || {};
+  if((tm.itens || []).length){
+    h += '<h2>Assuntos que renderam</h2><div class="cartao">' +
+      '<div class="sub">Palavras do título e da descrição, cruzadas com as views. É a única ' +
+      'pista de <b>assunto</b> que a API dá — e é o que ajuda a decidir o que gravar.</div>' +
+      barras(tm.itens.map(function(x){
+        return {rotulo: x.palavra, valor: x.vezes_a_geral,
+                texto: x.vezes_a_geral + "x  (" + x.videos + " víd.)"};
+      }), function(i){ return i.valor >= 1.5; }) +
+      '<div class="aviso"><b>Isto é pista, não prova.</b> A palavra pode ter vindo junto de um ' +
+      'áudio em alta, de um horário melhor ou de sorte. Serve para decidir o que ' +
+      '<b>testar</b> — não para concluir.</div></div>';
+  }
+
+  /* ---------- quando postar ---------- */
+  var ho = d.horario || {};
+  if((ho.por_hora || []).length || (ho.por_dia || []).length){
+    h += '<h2>Quando postar</h2><div class="cartao">' +
+      '<div class="sub">Medido nos vídeos dela, não em conselho genérico. Cada faixa diz de ' +
+      'quantos vídeos saiu — faixa com menos de 3 não entra.</div>';
+    if((ho.por_hora || []).length){
+      h += '<div class="rotulo" style="margin-top:14px">Por hora</div>' +
+        barras(ho.por_hora.map(function(x){
+          return {rotulo: x.rotulo, valor: x.mediana,
+                  texto: n(x.mediana) + "  (" + x.videos + ")"};
+        }), function(i, k){ return k === 0; });
+    }
+    if((ho.por_dia || []).length){
+      h += '<div class="rotulo" style="margin-top:14px">Por dia da semana</div>' +
+        barras(ho.por_dia.map(function(x){
+          return {rotulo: x.rotulo, valor: x.mediana,
+                  texto: n(x.mediana) + "  (" + x.videos + ")"};
+        }), function(i, k){ return k === 0; });
+    }
+    h += '</div>';
+  }
+
+  /* ---------- duração ---------- */
+  if((d.duracao || []).length){
+    h += '<h2>Duração que rende</h2><div class="cartao">' +
+      '<div class="sub">"Vídeo de 30s ou de 60s funciona melhor no meu perfil" — a resposta ' +
+      'muda de conta para conta, e só os dados dela sabem.</div>' +
+      barras(d.duracao.map(function(x){
+        return {rotulo: x.rotulo, valor: x.mediana,
+                texto: n(x.mediana) + "  (" + x.videos + ")"};
+      }), function(i, k){ return k === 0; }) + '</div>';
+  }
+
+  /* ---------- meia-vida ---------- */
+  var mv = d.meia_vida || {};
+  h += '<h2>Meia-vida</h2>';
+  if(!mv.pronto){
+    h += esperando(mv.faltam, "Medir quanto tempo o vídeo leva pra crescer");
+  } else if(mv.dias !== null){
+    h += '<div class="cartao"><div class="numerao">' + n(mv.dias, 1) + ' dia(s)</div>' +
+      '<div class="rotulo">para juntar 80% das views · ' + mv.amostra + ' vídeos</div>' +
+      '<div class="sub">Diz por quanto tempo vale continuar empurrando um vídeo. Curta, ' +
+      'insistir no quarto dia é gastar energia à toa; longa, parar no terceiro é desistir ' +
+      'cedo.</div></div>';
+  } else {
+    h += '<div class="cartao"><div class="sub">Ainda não há vídeo acompanhado desde a ' +
+      'publicação. A conta passa a valer para os vídeos postados de agora em diante.</div></div>';
+  }
+
+  /* ---------- ritmo ---------- */
+  if((d.ritmo || []).length > 1){
+    h += '<h2>Ritmo × resultado</h2><div class="cartao">' +
+      '<div class="sub">Postar mais está trazendo mais? É a decisão mais cara da rotina, e o ' +
+      'app não cruza cadência com resultado em lugar nenhum.</div>' +
+      '<table><tr><th>Semana</th><th class="n">Vídeos</th><th class="n">Views</th>' +
+      '<th class="n">Por vídeo</th></tr>' +
+      d.ritmo.slice(-10).map(function(x){
+        return '<tr><td>' + esc(x.semana) + '</td><td class="n">' + x.videos + '</td>' +
+          '<td class="n">' + n(x.views) + '</td>' +
+          '<td class="n">' + n(x.views_por_video) + '</td></tr>';
+      }).join("") + '</table></div>';
+  }
+
+  $("tudo").innerHTML = h;
+  ligarSeletorDePerfil();
+  ligarPuxar();
+  ligarDiario();
+  $("carregando").style.display = "none";
+  $("tudo").style.display = "";
+}
+
+function ligarDiario(){
+  [["diario-ligar", "api/tiktok/diario/ligar"],
+   ["diario-parar", "api/tiktok/diario/parar"]].forEach(function(par){
+    var b = $(par[0]);
+    if(!b) return;
+    b.onclick = function(){
+      b.disabled = true;
+      $("diario-recado").textContent = " ajustando…";
+      fetch(par[1], {method: "POST"}).then(function(r){ return r.json(); })
+        .then(function(res){
+          $("diario-recado").textContent = " " + (res.mensagem || "");
+          if(res.ok) setTimeout(function(){ location.reload(); }, 1200);
+          else b.disabled = false;
+        })
+        .catch(function(e){
+          $("diario-recado").textContent = " não deu: " + (e.message || e);
+          b.disabled = false;
+        });
+    };
+  });
+}
+
+function ligarPuxar(){
+  var bt = $("puxar");
+  if(!bt) return;
+  bt.onclick = function(){
+    bt.disabled = true;
+    /* Le a conta INTEIRA (2.327 videos dela levaram ~3 min). Sem este aviso a
+       tela parece travada e ela recarrega a pagina no meio - perdendo a leitura
+       e, com ela, o dia na serie. O contador existe pra dar sinal de vida. */
+    var t0 = Date.now();
+    var relogio = setInterval(function(){
+      var s = Math.round((Date.now() - t0) / 1000);
+      $("puxar-recado").textContent = " lendo a conta inteira… " +
+        (s < 60 ? s + "s" : Math.floor(s / 60) + "min" + (s % 60) + "s") +
+        " (costuma levar uns 3 minutos — não feche a página)";
+    }, 1000);
+    fetch("api/tiktok/puxar", {method: "POST"})
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        /* Um perfil pode falhar e os outros darem certo. Mostrar o recado de
+           cada um evita ela achar que leu tudo quando leu metade. */
+        clearInterval(relogio);
+        $("puxar-recado").textContent = (res.ok ? " pronto" : " não deu") +
+          (res.recado ? " — " + res.recado : (res.ok ? ", recarregando…" : ": " +
+           (res.erro || "erro")));
+        if(res.ok) setTimeout(function(){ location.reload(); }, 1000);
+        else bt.disabled = false;
+      })
+      .catch(function(e){
+        clearInterval(relogio);
+        $("puxar-recado").textContent = " não deu: " + (e.message || e);
+        bt.disabled = false;
+      });
+  };
+}
+
+/* Uma funcao, e nao a chamada solta, porque o seletor de perfil recarrega os
+   dados sem recarregar a pagina - recarregar perderia a posicao da rolagem e
+   piscaria a tela inteira a cada troca. */
+function carregar(){
+  $("carregando").style.display = "";
+  $("tudo").style.display = "none";
+  fetch("api/desempenho?conta=" + encodeURIComponent(contaEscolhida),
+        {cache: "no-store"})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok) throw new Error(d.erro || "resposta sem dados");
+      /* O painel decide qual perfil respondeu (a primeira visita nao pediu
+         nenhum). Guardar aqui deixa o seletor marcando o certo. */
+      if(d.conta){
+        contaEscolhida = d.conta;
+        try { localStorage.setItem("tiktok_conta", contaEscolhida); } catch(e){}
+      }
+      desenhar(d);
+    })
+    .catch(function(e){
+      $("carregando").style.display = "";
+      $("carregando").innerHTML = '<div class="aviso ruim"><b>Não consegui abrir:</b> ' +
+        esc(e.message || e) + '</div>';
+    });
+}
+
+carregar();
+</script>
+</body>
+</html>

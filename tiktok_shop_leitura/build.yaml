@@ -1,0 +1,11 @@
+---
+# Qual imagem base o Home Assistant usa para construir este add-on.
+#
+# So aarch64: e o Raspberry Pi 4 de 64 bits, que e o alvo. Declarar arquiteturas
+# que nunca foram testadas nao ajuda ninguem - o add-on simplesmente nao aparece
+# na loja de quem nao tem a arquitetura listada, o que e uma recusa honesta.
+#
+# Com este arquivo o Supervisor passa BUILD_FROM ao Dockerfile. Sem ele, o
+# Dockerfile cai no proprio valor padrao, que aponta para a mesma imagem.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.19
