@@ -1,6 +1,6 @@
 # Leitura TikTok Shop
 
-Lê os números do TikTok todo dia às 21h e serve o dashboard de desempenho.
+Lê os números do TikTok uma vez por dia e serve o dashboard de desempenho.
 
 ## Antes de ligar: os dados
 
@@ -27,13 +27,42 @@ conectada. O log avisa o que está faltando, em vez de falhar em silêncio.
 
 ## O que ele faz depois de ligado
 
-- **Todo dia às 21h**, lê todos os perfis conectados e guarda uma fotografia
-  crua por perfil. Se a leitura do dia já existir, ele sai quieto — disparo
-  repetido não gasta chamada.
+- **Uma vez por dia, à hora que você escolher** (opção `hora_da_leitura`, na
+  aba Configuração do add-on), lê todos os perfis conectados e guarda uma
+  fotografia crua por perfil. Se a leitura do dia já existir e estiver
+  completa, ele sai quieto — disparo repetido não gasta chamada.
 - **Serve o dashboard** pela barra lateral (marque "Mostrar na barra lateral").
 
-**Por que 21h e não de manhã:** o número da noite descreve melhor o que o vídeo
-fez naquele dia.
+## Qual a melhor hora
+
+**O padrão é 1h da manhã.** Era 21h até a versão 1.3.0, e o 21h era palpite. Os
+dados desmentiram: nos últimos 60 dias ela publicou **de 5h da manhã até 23h56**,
+e em 11 dos 14 últimos dias o último vídeo saiu **depois das 22h**.
+
+A leitura das 21h fechava o dia com uma a três publicações ainda por vir. Esses
+vídeos só entravam na fotografia do dia seguinte, já com um dia de vida — e são
+justamente os vídeos novos, que o painel da **Largada** existe para pegar
+enquanto ainda dá para reagir.
+
+À 1h da manhã o dia anterior está inteiro, ela não está postando, e a máquina
+está ociosa. **Se você mudar a hora, mude uma vez e deixe:** a série compara
+leitura com leitura, e mudar o horário toda semana faz o "ganhou desde ontem"
+comparar 20 horas com 28 sem avisar.
+
+Regra geral, se o padrão de publicação mudar: **uma a duas horas depois do
+último vídeo do dia.**
+
+## Reinício não perde mais o dia
+
+Se o add-on subir **depois** da hora marcada — atualização, watchdog, falta de
+memória no Raspberry — ele confere na hora se a leitura de hoje já aconteceu, em
+vez de esperar calado até o dia seguinte. Antes dava para passar dias sem leitura
+com a tela dizendo "lendo sozinho todo dia".
+
+O log agora conta tudo isso. Até a 1.3.0 o `PYTHONUNBUFFERED` não estava
+definido, então **nenhuma linha do relógio ou da leitura diária chegava ao log**
+— só as do servidor web, que saem por outro caminho. Era possível ficar dias sem
+leitura sem nada aparecer.
 
 **Um perfil que falha não impede os outros.** A fotografia é a única coisa aqui
 que não se recupera, então um token vencido num perfil não pode custar o dia dos

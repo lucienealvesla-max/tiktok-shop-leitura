@@ -1,7 +1,7 @@
 # Leitura TikTok Shop — add-on para Home Assistant
 
-Lê os números dos seus vídeos do TikTok **uma vez por dia** e guarda a leitura
-crua. Serve um dashboard de desempenho pela barra lateral do Home Assistant.
+Lê os números dos seus vídeos do TikTok **uma vez por dia**, à hora que você
+escolher, e guarda a leitura crua. Serve um dashboard de desempenho pela barra lateral do Home Assistant.
 
 ## Por que isto existe
 

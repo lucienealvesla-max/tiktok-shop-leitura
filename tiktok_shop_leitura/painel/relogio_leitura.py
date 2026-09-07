@@ -1,16 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Dorme até as 21h, lê, e volta a dormir.
+"""Dorme até a hora da leitura, lê, e volta a dormir.
 
 POR QUE ISTO EXISTE. A série por vídeo — quanto ganhou ontem, se acelerou, se
 um antigo ressuscitou — só existe porque alguém guardou leituras sucessivas. O
 TikTok não guarda isso em lugar nenhum. Um dia sem leitura é um buraco que não
 se recupera depois; por isso a leitura mudou para uma máquina que fica ligada.
 
-Por que 21h: de manhã ela está começando o dia, e o número da noite descreve
-melhor o que o vídeo fez.
+A HORA PADRÃO É 1H DA MANHÃ, e não mais 21h (07/09/2026). O 21h era palpite —
+"o número da noite descreve melhor o que o vídeo fez" — e os dados dela
+desmentiram: nos últimos 60 dias ela publicou até **23h56**, e o último vídeo
+do dia sai depois das 22h em 11 dos 14 últimos dias. A leitura das 21h fechava
+o dia com uma a três publicações ainda por vir, que só entravam na fotografia
+do dia seguinte já com um dia de vida — justo os vídeos novos, que são os que
+o painel da largada existe para pegar. À 1h da manhã o dia anterior está
+inteiro, ela não está postando, e a máquina está ociosa.
+
+E ELE SE RECUPERA DE UM REINÍCIO. Antes, um container que subisse depois da
+hora marcada simplesmente esperava o dia seguinte, calado. Como o add-on
+reinicia por atualização, por watchdog e por falta de memória, dava para
+passar dias sem leitura nenhuma com a tela dizendo "lendo sozinho todo dia" —
+e cada dia sem leitura é um buraco que não se recupera. Agora, ao subir depois
+da hora, ele confere na hora se a leitura de hoje já aconteceu.
 """
 
+import os
 import sys
 import time
 from datetime import datetime, timedelta
@@ -19,7 +33,23 @@ from pathlib import Path
 PASTA = Path(__file__).resolve().parent
 sys.path.insert(0, str(PASTA))
 
-HORA = 21
+
+def _hora_escolhida(padrao=1):
+    """A hora da leitura, da opcao do add-on. Nunca levanta, nunca vira 0 sozinha.
+
+    String vazia e o que uma opcao ausente entrega, e `int("")` derrubaria o
+    relogio no arranque - o container morreria em laco e a leitura nunca mais
+    aconteceria. Valor fora de 0-23 tambem cai no padrao: e melhor ler na hora
+    errada do que nao ler nunca.
+    """
+    try:
+        h = int(str(os.environ.get("TIKTOK_SHOP_HORA", "")).strip())
+    except (TypeError, ValueError):
+        return padrao
+    return h if 0 <= h <= 23 else padrao
+
+
+HORA = _hora_escolhida()
 
 # O Pi 4 nao tem RTC (relogio de tempo real): ao subir o container, o horario
 # pode estar errado ate o NTP acertar. E time.sleep() e MONOTONICO no Linux -
@@ -55,6 +85,17 @@ def segundos_ate(agora, hora=HORA):
 def main():
     import puxar_diario
     print("relogio da leitura no ar - lendo todo dia as %dh" % HORA)
+
+    # A RECUPERACAO DO REINICIO. `puxar_diario` confere por perfil se a leitura
+    # de hoje ja existe e esta completa, entao subir dez vezes num dia nao gasta
+    # dez leituras - ele para sozinho depois de tres tentativas incompletas.
+    if datetime.now().hour >= HORA:
+        print("subi depois das %dh - conferindo a leitura de hoje" % HORA)
+        try:
+            puxar_diario.main()
+        except Exception as e:
+            print("a leitura de recuperacao falhou: %s" % e)
+
     while True:
         agora = datetime.now()
         alvo = proxima_leitura(agora)

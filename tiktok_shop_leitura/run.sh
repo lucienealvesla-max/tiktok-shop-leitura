@@ -3,7 +3,13 @@ set -e
 
 mkdir -p "${TIKTOK_SHOP_DADOS}"
 
+# A hora escolhida na tela do add-on chega ao relogio por aqui. Se a opcao
+# faltar (instalacao antiga que ainda nao gravou as opcoes), o proprio relogio
+# tem um padrao - variavel vazia nao pode virar "leitura as 0h" por acidente.
+export TIKTOK_SHOP_HORA="$(bashio::config 'hora_da_leitura')"
+
 bashio::log.info "Leitura TikTok Shop - versao ${TIKTOK_SHOP_VERSAO}"
+bashio::log.info "leitura automatica todo dia as ${TIKTOK_SHOP_HORA}h"
 bashio::log.info "dados em ${TIKTOK_SHOP_DADOS}"
 
 if [ ! -f "${TIKTOK_SHOP_DADOS}/tiktok.json" ]; then

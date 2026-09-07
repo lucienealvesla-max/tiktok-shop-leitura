@@ -190,6 +190,13 @@ function esperando(faltam, oque){
    agora guarda tudo que ja viu (o catalogo), entao nada some - mas o numero
    tem que aparecer, ou a proxima vez volta a levar tres meses para ser
    notada. */
+/* A hora da leitura vem do servidor. Numero escrito na pagina mentiria assim
+   que ela mudasse a opcao na tela do add-on. */
+function horaDaLeitura(tk){
+  var h = (tk || {}).hora_da_leitura;
+  return (h === null || h === undefined) ? "uma vez por dia" : h + "h";
+}
+
 function blocoCobertura(c){
   if(!c || c.completa) return "";
   return '<div class="cartao"><div class="aviso ruim">' +
@@ -319,7 +326,8 @@ function blocoConexao(tk){
       : '<p><button class="botao" id="puxar">Ler agora</button>' +
         '<span id="puxar-recado" class="sub"></span></p>') +
     '<div class="sub">A leitura traz a conta inteira, do primeiro vídeo até hoje — ' +
-    'leva uns minutos. Com a leitura automática ligada, isso acontece sozinho às 21h.' +
+    'leva uns minutos. Com a leitura automática ligada, isso acontece sozinho às ' +
+    horaDaLeitura(tk) + '.' +
     '</div></div>';
 }
 
@@ -365,9 +373,9 @@ function desenhar(d){
          404 calado. O painel dela nunca manda esta chave, entao este ramo
          nunca roda la e as duas linhas de baixo continuam intocadas. */
       : (tk.agendador === false
-      ? '<b class="bom">Lendo sozinho todo dia às 21h.</b>'
+      ? '<b class="bom">Lendo sozinho todo dia às ' + horaDaLeitura(tk) + '.</b>'
       : (tk.leitura_diaria
-      ? '<b class="bom">Lendo sozinho todo dia às 21h.</b> ' +
+      ? '<b class="bom">Lendo sozinho todo dia às ' + horaDaLeitura(tk) + '.</b> ' +
         '<button class="botao" id="diario-parar" style="padding:4px 10px;font-size:11px">' +
         'desligar</button>'
       : 'Leitura automática <b>desligada</b> — cada dia sem leitura é um buraco na série ' +

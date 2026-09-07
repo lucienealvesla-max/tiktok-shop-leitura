@@ -1,9 +1,9 @@
 name: Leitura TikTok Shop
-version: "1.2.0"
+version: "1.3.0"
 slug: tiktok_shop_leitura
 # Link que aparece na pagina do add-on, no Home Assistant.
 url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
-description: Le os numeros do TikTok todo dia as 21h e mostra o dashboard de desempenho
+description: Le os numeros do TikTok uma vez por dia e mostra o dashboard de desempenho
 arch:
   - aarch64
 init: false
@@ -17,6 +17,15 @@ panel_icon: mdi:chart-line
 # perdida nao se recupera depois.
 map:
   - share:rw
+# A HORA DA LEITURA, ajustavel sem mexer no codigo. O padrao e 1h da manha, e
+# nao as 21h de antes, porque os dados dela desmentiram o palpite: ela publica
+# ate 23h56, e a leitura das 21h fechava o dia com uma a tres publicacoes ainda
+# por vir. A 1h da manha o dia anterior esta inteiro e ela nao esta postando.
+options:
+  hora_da_leitura: 1
+schema:
+  hora_da_leitura: int(0,23)
+
 # Se o processo morrer, o HA sobe de novo: um relogio parado nao avisa que
 # parou, e cada dia sem leitura e um buraco.
 watchdog: "tcp://[HOST]:[PORT:8099]"

@@ -88,8 +88,13 @@ def estado_daqui():
     nunca manda essa chave, então o dashboard.html continua distinguindo os
     dois lugares só por ela ficar ausente ou não.
     """
+    # A HORA VEM DAQUI, e nao de um numero escrito na pagina. Ela e ajustavel
+    # na tela do add-on desde 1.3.0, e uma pagina dizendo "lendo as 21h" com o
+    # relogio marcado para 1h e pior do que nao dizer hora nenhuma.
+    import relogio_leitura
     base = {"dono_da_leitura": True, "leitura_em": None, "versao": VERSAO,
-            "leitura_diaria": True, "agendador": False}
+            "leitura_diaria": True, "agendador": False,
+            "hora_da_leitura": relogio_leitura.HORA}
     try:
         base.update(tiktok.estado())
     except Exception:
