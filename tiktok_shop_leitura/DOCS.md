@@ -77,9 +77,12 @@ A leitura da API **encolhe sozinha** de vez em quando. Aconteceu aqui:
 | 04/09/2026 | 2.328 | 28/08/2024 |
 | 05/09/2026 | 1.478 | 02/04/2026 |
 | 06/09/2026 | **958** | 02/06/2026 |
+| 07/09/2026 | **958**, e **2.352** na segunda tentativa | 28/08/2024 |
 
 No dia 06 o vídeo de **2.102.442 visualizações** — o maior da conta — parou de
-vir, e a tela passou a dizer que o melhor vídeo tinha 277 mil. A mediana, os
+vir, e a tela passou a dizer que o melhor vídeo tinha 277 mil. (Os 2.352 da
+última linha são o catálogo inteiro; os 2.328 de 04/09 são só o que aquele dia
+trouxe, antes de ela publicar mais.) A mediana, os
 assuntos e o "melhor horário" passaram a descrever os últimos três meses
 fingindo ser a conta inteira. **Nenhum erro apareceu.**
 

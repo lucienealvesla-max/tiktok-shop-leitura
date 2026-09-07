@@ -436,10 +436,21 @@ def motivo_de_lista_vazia(dados):
     perfil não estar em Target users.
     """
     dados = dados or {}
-    if dados.get("erro"):
-        return str(dados["erro"])
+    # O `parcial` VEM ANTES DO `erro`, e a ordem decide o unico caso que
+    # importa. Quando a API recusa a PRIMEIRA pagina, `puxar_videos` devolve os
+    # dois juntos: `erro` com "HTTP 429" pelado e `motivo` com "a API recusou a
+    # pagina 1 mesmo depois de 4 tentativas: HTTP 429". Conferindo `erro`
+    # primeiro, o log ficava com o texto pelado - perdendo a pagina e a
+    # contagem de tentativas justamente na falha que esta funcao existe para
+    # registrar. E nenhum dos dois chamadores recupera isso depois: em
+    # puxar_diario o `continue` da lista vazia acontece antes do aviso de
+    # LEITURA PARCIAL, e em servidor_leitura aquele aviso mora no ramo em que
+    # vieram videos. Nao se perde nada na troca: `motivo` ja carrega o `erro`
+    # inteiro dentro dele.
     if dados.get("parcial"):
         return str(dados.get("motivo") or "a leitura parou no meio")
+    if dados.get("erro"):
+        return str(dados["erro"])
     return ("a API respondeu sem erro e com a lista vazia - nao ha video que "
             "este app possa ver nesta conta. No sandbox, confira se o perfil "
             "esta em Target users no app do TikTok")
