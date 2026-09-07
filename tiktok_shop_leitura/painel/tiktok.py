@@ -354,9 +354,17 @@ def puxar_videos(open_id, limite=None, tentativas=4, espera=20):
     DUAS RESPOSTAS, e as duas são necessárias:
 
     1. **Aqui: insistir.** A página que falhou é tentada de novo, do MESMO
-       cursor, depois de uma espera que dobra. Se a recusa for limite de ritmo
-       — a explicação mais provável, porque a conta inteira são 117 pedidos
-       seguidos — esperar resolve, e a leitura termina completa.
+       cursor, depois de uma espera que dobra. **E funciona:** em 07/09/2026 a
+       leitura do dia tinha trazido 958 vídeos; a segunda tentativa, minutos
+       depois, trouxe os **2.352**, de volta até 28/08/2024. A falha é passageira
+       e se recupera sozinha.
+
+       NÃO É LIMITE DE RITMO, e o palpite anterior escrito aqui estava errado.
+       A Display API permite **600 pedidos por minuto** e a conta inteira são
+       117 — não chega perto do teto. Também não é teto do sandbox: se fosse,
+       a segunda tentativa teria parado no mesmo lugar. O que a API faz nas
+       vezes em que para continua sem explicação; o que se sabe é que insistir
+       resolve, e que o log agora registra em qual página ela recusou.
     2. **No catalogo.py: não esquecer.** Se nem insistindo vier tudo, o que já
        foi visto uma vez continua na tela. Insistir reduz a chance; o catálogo
        tira a consequência.
@@ -412,6 +420,29 @@ def puxar_videos(open_id, limite=None, tentativas=4, espera=20):
     return True, {"videos": videos if limite is None else videos[:limite],
                   "parcial": False, "paginas": paginas,
                   "motivo": "a API disse que não há mais páginas"}
+
+
+def motivo_de_lista_vazia(dados):
+    """Por que a leitura voltou sem vídeo nenhum, em português. Nunca vazio.
+
+    POR QUE ISTO EXISTE. O perfil relief.daily está conectado desde 06/09/2026 e
+    nunca produziu uma leitura; o log dizia `nao vieram videos: sem motivo` — que
+    é a mensagem mais inútil possível, porque "sem motivo" era literalmente o
+    texto padrão de um `dict.get`, e não uma conclusão.
+
+    O caso sem erro é o informativo: a API respondeu 200, sem erro, com a lista
+    vazia. Isso não é falha de rede nem token vencido — é a API dizendo que não
+    há vídeo para este app ver naquela conta. No sandbox, a causa comum é o
+    perfil não estar em Target users.
+    """
+    dados = dados or {}
+    if dados.get("erro"):
+        return str(dados["erro"])
+    if dados.get("parcial"):
+        return str(dados.get("motivo") or "a leitura parou no meio")
+    return ("a API respondeu sem erro e com a lista vazia - nao ha video que "
+            "este app possa ver nesta conta. No sandbox, confira se o perfil "
+            "esta em Target users no app do TikTok")
 
 
 def gravar_na_pasta_de_dados(videos, pasta, perfil=None):

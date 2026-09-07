@@ -177,7 +177,7 @@ class Alca(BaseHTTPRequestHandler):
                 ok, d = tiktok.puxar_videos(conta["open_id"])
                 videos = (d or {}).get("videos") or []
                 if not videos:
-                    linha["erro"] = (d or {}).get("erro", "não vieram vídeos")
+                    linha["erro"] = tiktok.motivo_de_lista_vazia(d)
                 else:
                     guardou, recado = tiktok.guardar_foto(
                         conta["open_id"], videos)

@@ -85,9 +85,16 @@ fingindo ser a conta inteira. **Nenhum erro apareceu.**
 
 Duas coisas mudaram por causa disso:
 
-- **O add-on insiste.** Quando a API recusa uma página, ele tenta de novo, do
-  mesmo ponto, esperando cada vez mais (20s, 40s, 80s). Se ainda vier pela
-  metade, tenta de novo mais tarde no mesmo dia — até três vezes.
+- **O add-on insiste, e funciona.** Quando a API recusa uma página, ele tenta
+  de novo do mesmo ponto, esperando cada vez mais (20s, 40s, 80s). Se ainda vier
+  pela metade, tenta de novo mais tarde no mesmo dia — até três vezes. Em
+  07/09/2026 a leitura tinha trazido 958 vídeos; a segunda tentativa, minutos
+  depois, trouxe os **2.352**, de volta até 28/08/2024.
+
+  **Não é limite de ritmo nem teto do sandbox.** A Display API permite 600
+  pedidos por minuto e a conta inteira são 117; e um teto teria parado a segunda
+  tentativa no mesmo lugar. O que a API faz nas vezes em que para continua sem
+  explicação — mas o log agora registra em qual página ela recusou.
 - **O add-on não esquece.** Um arquivo `catalogo.json` por perfil guarda o
   último número conhecido de **todo vídeo que já apareceu em alguma leitura**.
   Os painéis de retrato (mediana, assuntos, horário, duração) saem dele.

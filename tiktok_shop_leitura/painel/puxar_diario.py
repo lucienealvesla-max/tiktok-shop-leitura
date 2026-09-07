@@ -109,7 +109,7 @@ def main():
         videos = dados.get("videos") or []
         if not videos:
             print("%s: nao vieram videos: %s"
-                  % (conta["nome"], dados.get("erro", "sem motivo")))
+                  % (conta["nome"], tiktok.motivo_de_lista_vazia(dados)))
             continue
         # POR QUE A LEITURA PAROU, no log, sempre. A investigacao de 07/09/2026
         # comecou por arquivo no disco porque isto aqui nao existia: a leitura
