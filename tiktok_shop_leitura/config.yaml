@@ -1,5 +1,5 @@
 name: Leitura TikTok Shop
-version: "1.0.0"
+version: "1.1.0"
 slug: tiktok_shop_leitura
 # Link que aparece na pagina do add-on, no Home Assistant.
 url: https://github.com/lucienealvesla-max/tiktok-shop-leitura

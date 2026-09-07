@@ -82,6 +82,18 @@ ol li{margin:9px 0}
 .botao:disabled{opacity:.5;cursor:default}
 .bom{color:var(--bom)}
 #carregando{color:var(--fraco);font-size:15px}
+/* A PAUTA. Unica parte da tela escrita em frase e nao em numero: e o que ela
+   le de manha antes de gravar, e por isso e a primeira coisa da pagina. */
+.pauta{border-left:3px solid var(--rosa);padding:9px 0 9px 14px;margin:14px 0}
+.pauta .acao{font-family:var(--tecnica);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--lampada)}
+.pauta .texto{margin-top:3px}
+/* DE ONDE SAIU, sempre junto: conselho que ela nao consegue conferir, com o
+   tempo, ela para de seguir. */
+.pauta .fonte{font-size:12px;color:var(--fraco);margin-top:3px;font-family:var(--dado)}
+/* Hashtag e frase sao mais compridas que "22h" ou "45-60s", que foi para o que
+   a coluna original de 104px foi medida. */
+.largo .linha .nome{width:170px}
 pre.resumo{background:var(--painel2);border:1px solid var(--sulco);border-radius:8px;
   padding:14px;font-family:var(--dado);font-size:13px;line-height:1.6;
   white-space:pre-wrap;color:var(--texto);margin:0}
@@ -132,6 +144,52 @@ function esperando(faltam, oque){
     ' leitura(s).</b> ' + oque + ' só existe comparando leituras de dias diferentes — ' +
     'o TikTok não guarda isso em lugar nenhum, então o painel constrói a série a partir ' +
     'de agora.</div></div>';
+}
+
+/* A LEITURA DE HOJE COBRIU QUANTO DA CONTA. Em 06/09/2026 a leitura encolheu
+   de 2.328 para 958 videos e a tela nao mudou de cara: a mediana, os assuntos e
+   o "melhor horario" passaram a descrever tres meses fingindo ser a conta
+   inteira, e o video de 2,1 milhao sumiu sem uma linha de aviso. O painel
+   agora guarda tudo que ja viu (o catalogo), entao nada some - mas o numero
+   tem que aparecer, ou a proxima vez volta a levar tres meses para ser
+   notada. */
+function blocoCobertura(c){
+  if(!c || c.completa) return "";
+  return '<div class="cartao"><div class="aviso ruim">' +
+    '<b>A última leitura trouxe ' + n(c.na_ultima_leitura) + ' dos ' +
+    n(c.conhecidos) + ' vídeos que este painel já viu.</b> Os outros ' +
+    n(c.nao_vieram) + ' continuam nas contas, com o último número conhecido de ' +
+    'cada um — nada foi perdido. O que muda é a atualidade: vídeo que não veio ' +
+    'hoje está com o número do dia em que veio pela última vez. ' +
+    '"Acelerando", "Ressuscitou" e "Largada" só usam leitura de verdade, ' +
+    'então esses não misturam.</div></div>';
+}
+
+function painelPauta(p){
+  if(!p || !(p.itens || []).length) return "";
+  return '<h2>O que fazer amanhã</h2><div class="cartao">' +
+    '<div class="sub">O resto da tela mostra <b>o que aconteceu</b>. Isto aqui é ' +
+    'a tradução: o que dá para fazer com isso amanhã de manhã. Cada linha diz de ' +
+    'onde saiu — conselho sem origem não se confere, e o que não se confere não ' +
+    'se segue.</div>' +
+    p.itens.map(function(i){
+      return '<div class="pauta"><div class="acao">' + esc(i.acao) + '</div>' +
+        '<div class="texto">' + esc(i.texto) + '</div>' +
+        '<div class="fonte">' + esc(i.de_onde) + '</div></div>';
+    }).join("") + '</div>';
+}
+
+/* Hashtag, parceria, frase e gancho respondem a mesma pergunta com a mesma
+   conta - a mediana do grupo contra a mediana dela. Um desenho so, entao. */
+function painelRanking(titulo, r, explica, rodape){
+  if(!r || !(r.itens || []).length) return "";
+  return '<h2>' + titulo + '</h2><div class="cartao largo">' +
+    '<div class="sub">' + explica + '</div>' +
+    barras(r.itens.map(function(x){
+      return {rotulo: x.termo, valor: x.vezes_a_geral,
+              texto: x.vezes_a_geral + "x  (" + x.videos + " víd.)"};
+    }), function(i){ return i.valor >= 1.5; }) +
+    (rodape || "") + '</div>';
 }
 
 /* QUAL PERFIL ESTA NA TELA. Ela tem mais de um, e o que funciona num publico
@@ -237,6 +295,8 @@ function desenhar(d){
   }
 
   var h = blocoPerfis(tk);
+  h += blocoCobertura(d.cobertura);
+  h += painelPauta(d.pauta);
 
   /* ---------- o resumo: é o que eu leio pra recomendar o próximo vídeo ---------- */
   h += '<h2>Resumo</h2><div class="cartao">' +
@@ -278,6 +338,35 @@ function desenhar(d){
        "Pagina nova conversando com servidor velho" ja custou uma rodada aqui. */
     (tk.versao ? '<div class="sub">versão ' + esc(tk.versao) + '</div>' : '') +
     '</div>';
+
+  /* ---------- largada: as primeiras horas ---------- */
+  var lg = d.largada || {};
+  h += '<h2>Largada — as primeiras horas</h2>';
+  if(!lg.pronto){
+    h += esperando(lg.faltam, "Saber se um vídeo novo largou bem");
+  } else if(!(lg.itens || []).length){
+    h += '<div class="cartao"><div class="sub">Nenhum vídeo publicado nas últimas ' +
+      (lg.janela_horas || 48) + ' horas foi lido ainda. Assim que houver, aparece aqui.' +
+      '</div></div>';
+  } else {
+    h += '<div class="cartao"><div class="sub">Reagir a um vídeo que está subindo só ' +
+      'vale <b>enquanto ele sobe</b>: responder comentário, fixar comentário, gravar a ' +
+      'parte 2, empurrar o link. Cada vídeo é comparado com os outros da mesma <b>idade</b> ' +
+      '— 14 horas contra 28 horas não compara nada, porque o mais velho sempre teria mais.' +
+      '</div><table><tr><th>Vídeo</th><th>Publicado</th><th class="n">Idade</th>' +
+      '<th class="n">Views</th><th class="n">Contra a faixa</th></tr>' +
+      lg.itens.map(function(x){
+        var comp = (x.vezes_a_largada === null || x.vezes_a_largada === undefined)
+          ? '<span class="sub">só ' + x.comparaveis + ' na faixa</span>'
+          : (x.vezes_a_largada >= 1.5 ? '<b class="bom">' + x.vezes_a_largada + 'x</b>'
+                                      : x.vezes_a_largada + 'x');
+        return '<tr><td>' + esc(x.titulo || "(sem título)") + '</td>' +
+          '<td>' + esc(x.publicado) + '</td>' +
+          '<td class="n">' + x.horas + 'h</td>' +
+          '<td class="n">' + n(x.views) + '</td>' +
+          '<td class="n">' + comp + '</td></tr>';
+      }).join("") + '</table></div>';
+  }
 
   /* ---------- acelerando ---------- */
   h += '<h2>Acelerando agora</h2>';
@@ -321,6 +410,75 @@ function desenhar(d){
       }).join("") + '</table></div>';
   }
 
+  /* ---------- refazer: o video bom que nao foi entregue ---------- */
+  var rf = d.refazer || {};
+  if((rf.itens || []).length){
+    h += '<h2>Vale refazer</h2><div class="cartao">' +
+      '<div class="aviso"><b>View é o que o TikTok deu; compartilhar e comentar é o que a ' +
+      'pessoa fez.</b> Estes vídeos ficaram abaixo da sua mediana de views, mas quem viu ' +
+      'reagiu muito acima do normal — não são vídeos ruins, são vídeos bons que não foram ' +
+      'entregues. Refazer um destes é a aposta mais segura da semana: o assunto já passou ' +
+      'no teste que importa, e só a capa, o gancho ou o horário mudam.</div>' +
+      '<table><tr><th>Vídeo</th><th class="n">Views</th><th>Por quê</th>' +
+      '<th class="n">Contra a mediana</th><th class="n">Idade</th></tr>' +
+      rf.itens.map(function(x){
+        return '<tr><td>' + esc(x.titulo || "(sem título)") + '</td>' +
+          '<td class="n">' + n(x.views) + '</td>' +
+          '<td>' + esc(x.motivo) + '</td>' +
+          '<td class="n bom">' + x.forca + 'x</td>' +
+          '<td class="n">' + x.idade_dias + 'd</td></tr>';
+      }).join("") + '</table>' +
+      '<div class="sub">Mediana da conta: <b>' + n(rf.mediana_views) + ' views</b>, ' +
+      n(rf.mediana_compartilhamento, 2) + '% de compartilhamento e ' +
+      n(rf.mediana_comentario, 2) + '% de comentário por view.</div></div>';
+  }
+
+  /* ---------- assunto que rendia e parou ---------- */
+  var es = d.esquecidos || {};
+  if((es.itens || []).length){
+    h += '<h2>Assunto que rendia e você parou</h2><div class="cartao">' +
+      '<div class="aviso"><b>Ninguém tem ideia nova todo dia.</b> A sua conta já tem ' +
+      'milhares de tentativas gravadas, e estes assuntos renderam acima da sua mediana e ' +
+      'sumiram da sua rotina há mais de ' + (es.dias || 21) + ' dias. É pauta pronta, com ' +
+      'público já testado e sem risco de tema: custa uma tarde, não uma aposta.</div>' +
+      '<table><tr><th>Assunto</th><th>Tipo</th><th class="n">Rendeu</th>' +
+      '<th class="n">Vídeos</th><th class="n">Parado há</th></tr>' +
+      es.itens.map(function(x){
+        return '<tr><td>' + esc(x.termo) + '</td><td class="sub">' + esc(x.tipo) + '</td>' +
+          '<td class="n bom">' + x.vezes_a_geral + 'x</td>' +
+          '<td class="n">' + x.videos + '</td>' +
+          '<td class="n">' + x.dias_sem_usar + 'd</td></tr>';
+      }).join("") + '</table></div>';
+  }
+
+  /* ---------- os quatro rankings de assunto ---------- */
+  h += painelRanking("Hashtags que rendem", d.hashtags,
+    'A hashtag é o assunto <b>rotulado por você mesma</b> — dá para pesquisar no TikTok e ' +
+    'dá para repetir amanhã. A régua é a sua mediana (' +
+    n((d.hashtags || {}).geral) + ' views). Hashtag que você põe em todo vídeo não separa ' +
+    'vídeo bom de ruim e aparece perto de 1,0x sozinha, sem precisar de lista negra.',
+    '<div class="sub" style="margin-top:12px">' +
+    ((d.hashtags || {}).itens || []).slice(0, 6).map(function(x){
+      return esc(x.termo) + ' <span class="sub">está em ' + x.presenca +
+        '% dos vídeos, último uso ' + esc(x.ultimo_uso || "?") + '</span>';
+    }).join(" · ") + '</div>');
+
+  h += painelRanking("Parcerias e marcas", d.parcerias,
+    'Você é afiliada: saber qual parceria rende é decisão de negócio, não curiosidade. ' +
+    'Quando você cola o nome de exibição da marca ("@Grupo On Line Editora"), só a primeira ' +
+    'palavra vira menção — o TikTok separaria igual. Serve para comparar parcerias entre ' +
+    'si, não como nome de conta.');
+
+  h += painelRanking("Assunto em duas palavras", d.frases,
+    'Palavra solta espalha o assunto: "kit" aparece em kit de pincéis, de maquiagem e de ' +
+    'cozinha, e a mediana de "kit" não descreve nenhum dos três. O par de palavras é a ' +
+    'menor unidade que ainda é um <b>assunto</b>.');
+
+  h += painelRanking("Como o título começa", d.ganchos,
+    'As primeiras palavras do título — o que a pessoa lê antes de decidir se fica. Você ' +
+    'publica 15 vídeos por dia repetindo fórmulas de abertura sem medir qual funciona. ' +
+    'Trocar a abertura é a mudança mais barata que existe: não exige regravar nada.');
+
   /* ---------- contra a mediana ---------- */
   var cm = d.contra_a_mediana || {};
   if(cm.mediana){
@@ -347,6 +505,20 @@ function desenhar(d){
         return {rotulo: x.titulo || "?", valor: x.taxa,
                 texto: x.taxa + "%  (" + n(x.views) + ")"};
       }), function(i){ return i.valor >= (tc.mediana || 0) * 2; }) + '</div>';
+  }
+
+  /* ---------- comentario por view ---------- */
+  var tcm = d.comentario || {};
+  if((tcm.itens || []).length){
+    h += '<h2>Comentado por visualização</h2><div class="cartao">' +
+      '<div class="sub">Compartilhamento mede alcance; <b>comentário mede vontade de ' +
+      'conversar</b>. Na prática, o vídeo muito comentado é o que gerou dúvida — e dúvida ' +
+      'é pauta pronta: o próximo vídeo é a resposta, e já nasce com público interessado. ' +
+      'Mediana sua: <b>' + n(tcm.mediana, 2) + '%</b>.</div>' +
+      barras(tcm.itens.map(function(x){
+        return {rotulo: x.titulo || "?", valor: x.taxa,
+                texto: x.taxa + "%  (" + n(x.comentarios) + ")"};
+      }), function(i){ return i.valor >= (tcm.mediana || 0) * 2; }) + '</div>';
   }
 
   /* ---------- assuntos ---------- */
@@ -396,6 +568,39 @@ function desenhar(d){
         return {rotulo: x.rotulo, valor: x.mediana,
                 texto: n(x.mediana) + "  (" + x.videos + ")"};
       }), function(i, k){ return k === 0; }) + '</div>';
+  }
+
+  /* ---------- quantos videos por dia ---------- */
+  var cd = d.cadencia || {};
+  h += '<h2>Quantos vídeos por dia</h2>';
+  if(!cd.pronto){
+    h += '<div class="cartao"><div class="sub">Faltam ' + (cd.faltam || 0) + ' dia(s) de ' +
+      'publicação para comparar dia cheio com dia leve.</div></div>';
+  } else {
+    var dif = cd.diferenca;
+    h += '<div class="cartao"><div class="sub">A decisão mais cara da sua rotina: ' +
+      '"gravo mais um hoje ou não?". O painel <b>Ritmo × resultado</b> responde por semana; ' +
+      'a sua decisão é diária, e a semana esconde o dia dentro da média. Os últimos 3 dias ' +
+      'ficam de fora — vídeo de ontem ainda está sendo entregue, e incluí-lo faria todo dia ' +
+      'recente parecer fraco.</div>' +
+      '<div class="linha"><span class="nome">até ' + n(cd.corte) + '/dia</span>' +
+      '<span class="qtd" style="width:auto;text-align:left">mediana ' +
+      n(cd.leves.mediana) + ' views · ' + cd.leves.dias + ' dias</span></div>' +
+      '<div class="linha"><span class="nome">mais de ' + n(cd.corte) + '/dia</span>' +
+      '<span class="qtd" style="width:auto;text-align:left">mediana ' +
+      n(cd.pesados.mediana) + ' views · ' + cd.pesados.dias + ' dias</span></div>' +
+      (dif === null || dif === undefined
+        ? '<div class="sub">Ainda não há dias suficientes dos dois lados para concluir.</div>'
+        : (dif <= -15
+          ? '<div class="aviso ruim"><b>Nos dias cheios cada vídeo rende ' + n(Math.abs(dif), 1) +
+            '% menos.</b> Menos vídeos melhor acabados rendem mais que a fila inteira.</div>'
+          : (dif >= 15
+            ? '<div class="aviso"><b>Nos dias cheios cada vídeo ainda rende ' + n(dif, 1) +
+              '% mais.</b> O volume não está atrapalhando.</div>'
+            : '<div class="sub">Diferença de ' + n(dif, 1) + '% entre dia cheio e dia leve — ' +
+              'pequena demais para virar conselho. O volume não parece estar atrapalhando ' +
+              'nem ajudando.</div>'))) +
+      '</div>';
   }
 
   /* ---------- meia-vida ---------- */

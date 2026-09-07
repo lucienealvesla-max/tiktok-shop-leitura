@@ -176,6 +176,13 @@ class Alca(BaseHTTPRequestHandler):
                 else:
                     guardou, recado = tiktok.guardar_foto(
                         conta["open_id"], videos)
+                    # LEITURA PELA METADE TEM QUE APARECER NA TELA. Foi este o
+                    # buraco de 06/09/2026: a leitura trouxe 958 dos 2.352
+                    # vídeos, o botão disse "pronto", e só três dias depois
+                    # alguém reparou que o vídeo de 2,1 milhão tinha sumido.
+                    if (d or {}).get("parcial"):
+                        recado += " — VEIO PELA METADE: " + str(
+                            d.get("motivo") or d.get("erro") or "sem motivo")
                     linha["recado"] = recado
                     algum = algum or guardou
             except Exception as e:

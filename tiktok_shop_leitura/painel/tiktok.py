@@ -330,7 +330,7 @@ def _valido(open_id):
     return d["access_token"], None
 
 
-def puxar_videos(open_id, limite=None):
+def puxar_videos(open_id, limite=None, tentativas=4, espera=20):
     """Baixa a lista de vídeos com os números. (ok, dados)
 
     SEM TETO por padrao (04/09/2026). Havia um limite de 200, e ele escondia o
@@ -338,15 +338,38 @@ def puxar_videos(open_id, limite=None):
     alem dos 200 mais recentes. Ela percebeu olhando a tela: "ela tem video com
     mais de 2 milhoes de views e parece que nao vieram".
 
-    A conta inteira sao 2.327 videos (28/08/2024 a 04/09/2026) e 178 segundos.
-    O parametro `limite` continua existindo pra quem precisar cortar, mas
-    ninguem usa hoje - e cortar tem um custo escondido, ver `guardar_foto`.
+    E MESMO SEM TETO A LEITURA ENCOLHEU (07/09/2026), que é um problema
+    diferente e pior, porque não tinha sintoma:
+
+        04/09 -> 2.328 vídeos, desde 28/08/2024
+        05/09 -> 1.478 vídeos, só desde 02/04/2026
+        06/09 ->   958 vídeos, só desde 02/06/2026
+
+    A paginação para no meio — a API recusa a página seguinte — e o código
+    antigo devolvia o que tinha com `parcial: True`, `puxar_diario` gravava, e
+    a tela mostrava um terço da conta com cara de conta inteira. O vídeo de 2,1
+    milhão sumiu da tela no dia 06 sem uma linha de aviso.
+
+    DUAS RESPOSTAS, e as duas são necessárias:
+
+    1. **Aqui: insistir.** A página que falhou é tentada de novo, do MESMO
+       cursor, depois de uma espera que dobra. Se a recusa for limite de ritmo
+       — a explicação mais provável, porque a conta inteira são 117 pedidos
+       seguidos — esperar resolve, e a leitura termina completa.
+    2. **No catalogo.py: não esquecer.** Se nem insistindo vier tudo, o que já
+       foi visto uma vez continua na tela. Insistir reduz a chance; o catálogo
+       tira a consequência.
+
+    `parcial` continua saindo daqui, agora com `paginas` e `motivo` junto: sem
+    isso a próxima investigação recomeça do zero, olhando arquivo por arquivo
+    como esta recomeçou.
     """
     token, erro = _valido(open_id)
     if not token:
         return False, {"erro": erro}
 
     videos, cursor, tem_mais = [], None, True
+    paginas, erro_final = 0, None
     while tem_mais and (limite is None or len(videos) < limite):
         corpo = {"max_count": 20}
         if cursor:
@@ -356,15 +379,38 @@ def puxar_videos(open_id, limite=None):
                        {"Authorization": "Bearer " + token,
                         "Content-Type": "application/json"})
         if not ok:
-            erro = (d.get("error") or {}).get("message") or d.get("erro") or str(d)
+            erro_final = (d.get("error") or {}).get("message") or d.get("erro") or str(d)
+            # A MESMA PÁGINA DE NOVO, esperando cada vez mais. Só desiste depois
+            # de `tentativas`; a espera dobrando é o que dá tempo de a janela de
+            # limite virar sem inundar a API de pedidos iguais.
+            for tentativa in range(1, tentativas):
+                time.sleep(espera * (2 ** (tentativa - 1)))
+                ok, d = _pedir(LISTA_URL + "?fields=" + ",".join(CAMPOS),
+                               json.dumps(corpo).encode("utf-8"),
+                               {"Authorization": "Bearer " + token,
+                                "Content-Type": "application/json"})
+                if ok:
+                    erro_final = None
+                    break
+                erro_final = ((d.get("error") or {}).get("message")
+                              or d.get("erro") or str(d))
+        if not ok:
             # Devolve o que já veio: meia lista é melhor que nada, e a tela diz
             # que veio pela metade.
-            return bool(videos), {"erro": erro, "videos": videos, "parcial": True}
+            return bool(videos), {"erro": erro_final, "videos": videos,
+                                  "parcial": True, "paginas": paginas,
+                                  "motivo": "a API recusou a página %d mesmo "
+                                            "depois de %d tentativas: %s"
+                                            % (paginas + 1, tentativas, erro_final)}
         dados = d.get("data") or {}
-        videos.extend(dados.get("videos") or [])
+        veio = dados.get("videos") or []
+        videos.extend(veio)
+        paginas += 1
         cursor = dados.get("cursor")
         tem_mais = bool(dados.get("has_more")) and cursor is not None
-    return True, {"videos": videos if limite is None else videos[:limite]}
+    return True, {"videos": videos if limite is None else videos[:limite],
+                  "parcial": False, "paginas": paginas,
+                  "motivo": "a API disse que não há mais páginas"}
 
 
 def gravar_na_pasta_de_dados(videos, pasta, perfil=None):
@@ -451,18 +497,39 @@ def guardar_foto(open_id, videos):
     try:
         antes = json.loads(alvo.read_text(encoding="utf-8"))
         juntos = {v.get("id"): v for v in (antes.get("videos") or [])}
+        leituras = int(antes.get("leituras") or 1)
     except (OSError, ValueError):
-        juntos = {}
+        juntos, leituras = {}, 0
     if juntos:
         for v in magros:
             juntos[v.get("id")] = v
         magros = list(juntos.values())
     try:
-        alvo.write_text(json.dumps({"lido_em": int(time.time()), "videos": magros}),
-                        encoding="utf-8")
+        # `leituras` é quantas vezes a API foi consultada HOJE para esta conta.
+        # É o que deixa `puxar_diario` insistir numa leitura que veio pela
+        # metade sem virar laço infinito de pedidos se a API estiver fechada.
+        alvo.write_text(json.dumps({"lido_em": int(time.time()),
+                                    "leituras": leituras + 1,
+                                    "videos": magros}), encoding="utf-8")
     except OSError as e:
         return False, str(e)
-    return True, "%d video(s) fotografados em %s" % (len(magros), alvo.name)
+
+    # O CATALOGO, logo depois da fotografia e nunca antes: a fotografia é a
+    # única coisa insubstituível aqui, e um erro no catálogo não pode custar o
+    # dia na série. Por isso ele vem depois e não derruba nada — o catálogo se
+    # reconstrói das fotografias a qualquer momento, e a fotografia não.
+    recado_catalogo = ""
+    try:
+        import catalogo
+        ok_cat, recado_catalogo = catalogo.atualizar(
+            pasta_da_conta(open_id), magros,
+            datetime.now().strftime("%Y-%m-%d"))
+        if not ok_cat:
+            recado_catalogo = "catálogo não gravou: " + str(recado_catalogo)
+    except Exception as e:
+        recado_catalogo = "catálogo não gravou: %s" % e
+    return True, "%d video(s) fotografados em %s%s" % (
+        len(magros), alvo.name, (" · " + recado_catalogo) if recado_catalogo else "")
 
 
 def fotografia_de_hoje(open_id):

@@ -24,34 +24,19 @@ DUAS REGRAS QUE VALEM PARA TUDO NESTE ARQUIVO:
    nada. Sem o piso, o ranking enche de ruído e aponta pro lugar errado.
 """
 
-import statistics
 from datetime import datetime
 
-# Abaixo disto, a taxa é ruído: numerador pequeno demais para dividir.
-MINIMO_DE_VIEWS = 100
-# Quantos vídeos um grupo precisa ter para virar conclusão na tela.
-MINIMO_DE_VIDEOS = 3
+import conteudo
+from comum import MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS
+from comum import mediana as _mediana
+from comum import n as _n
+from comum import palavras as _palavras
+from comum import quando as _quando
 
-
-# ----------------------------------------------------------------- utilidades
-
-def _n(x):
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _mediana(valores):
-    v = [x for x in valores if x is not None]
-    return statistics.median(v) if v else None
-
-
-def _quando(create_time):
-    try:
-        return datetime.fromtimestamp(int(create_time))
-    except (TypeError, ValueError, OSError):
-        return None
+# As contas miúdas (mediana, data, palavras úteis) e os dois pisos mudaram-se
+# para comum.py quando conteudo.py passou a precisar das mesmas. Os nomes com
+# sublinhado continuam aqui porque este arquivo os usa em trinta lugares, e
+# renomear tudo transformaria uma extração de duas linhas numa reescrita.
 
 
 def ultimos_videos(fotos):
@@ -75,16 +60,35 @@ def serie_por_video(fotos):
     return serie
 
 
+def _dias_entre(a, b):
+    """Dias entre dois rótulos AAAA-MM-DD. 1 quando não der para saber."""
+    try:
+        return max(1, (datetime.strptime(b, "%Y-%m-%d")
+                       - datetime.strptime(a, "%Y-%m-%d")).days)
+    except (ValueError, TypeError):
+        return 1
+
+
 def _ganhos_diarios(pontos):
-    """As diferenças entre leituras consecutivas, nunca negativas.
+    """As diferenças entre leituras consecutivas: (dia, ganho, ganho por dia).
 
     Negativo aparece quando o TikTok recalcula ou o vídeo sai do ar por um dia.
     Deixar passar viraria "ganho de -3.000 views" na tela, que assusta sem
     motivo; zerar é a leitura honesta - naquele intervalo não houve ganho.
+
+    E O INTERVALO NEM SEMPRE É DE UM DIA. A leitura pode falhar, o Pi pode ficar
+    sem luz, e um vídeo pode simplesmente não vir numa leitura que encolheu (foi
+    o que aconteceu em 06/09: 1.394 vídeos não vieram). Nesses casos as duas
+    leituras vizinhas estão a três, cinco dias de distância, e chamar a
+    diferença toda de "ganhou ontem" infla o número na cara dela — justamente
+    no painel que existe para ela decidir onde gastar a próxima hora. O ganho
+    bruto continua saindo daqui, agora com o ritmo por dia ao lado.
     """
     fora = []
     for i in range(1, len(pontos)):
-        fora.append((pontos[i][0], max(0.0, pontos[i][1] - pontos[i - 1][1])))
+        dias = _dias_entre(pontos[i - 1][0], pontos[i][0])
+        ganho = max(0.0, pontos[i][1] - pontos[i - 1][1])
+        fora.append((pontos[i][0], ganho, ganho / dias))
     return fora
 
 
@@ -116,9 +120,14 @@ def acelerando(fotos, quantos=10):
             "titulo": (v.get("title") or v.get("video_description") or "")[:60],
             "views": _n(v.get("view_count")),
             "ganho_ultimo": ganhos[-1][1],
-            "ganho_7d": sum(g for _, g in ganhos[-7:]),
+            "ganho_por_dia": round(ganhos[-1][2], 1),
+            "dias_do_intervalo": _dias_entre(pontos[-2][0], pontos[-1][0]),
+            "ganho_7d": sum(g for _, g, _r in ganhos[-7:]),
         })
-    itens.sort(key=lambda x: -x["ganho_ultimo"])
+    # ORDENA PELO RITMO, não pelo bruto: entre um vídeo que ganhou 900 views em
+    # três dias e um que ganhou 500 em um, quem está pegando fogo agora é o
+    # segundo — e "agora" é a pergunta inteira deste painel.
+    itens.sort(key=lambda x: -x["ganho_por_dia"])
     return {"pronto": True, "itens": itens[:quantos]}
 
 
@@ -148,8 +157,8 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50):
         nasceu = _quando(v.get("create_time"))
         if not nasceu or (agora - nasceu).days < idade_minima:
             continue
-        ultimo = ganhos[-1][1]
-        antes = _mediana([g for _, g in ganhos[:-1]]) or 0.0
+        ultimo = ganhos[-1][2]        # ritmo por dia, não o bruto do intervalo
+        antes = _mediana([r for _, _g, r in ganhos[:-1]]) or 0.0
         if ultimo < piso:
             continue
         # Vídeo que estava parado de vez (mediana 0) e ganhou acima do piso já é
@@ -349,33 +358,7 @@ def ritmo(videos):
     return fora
 
 
-# Palavras que aparecem em tudo e não distinguem nada. Sem tirar, o "ranking de
-# assuntos" vira ranking de artigo e preposição.
-PARADAS = set("""
-a o as os um uma uns umas de do da dos das em no na nos nas por para com sem
-que e ou mas se ja nao sim eu voce vc ela ele nos eles elas meu minha seu sua
-isso isto esse essa este esta aquele aquela ai la aqui muito mais menos tudo
-todo toda todos todas ser sou e esta estao tem tenho ter vai vou foi era como
-quando onde qual quais quem porque pq ate entao so agora hoje ontem amanha
-dia dias vez vezes coisa coisas gente pra pro nas dos das num numa
-""".split())
-
-
-def _palavras(texto):
-    """As palavras úteis de um título/descrição, sem acento e sem hashtag.
-
-    Hashtag sai fora de propósito: `#fyp` e `#viral` estão em tudo e não contam
-    nada sobre o assunto. O que interessa é a palavra falada no título.
-    """
-    import re
-    import unicodedata
-    limpo = re.sub(r"[#@]\S+", " ", texto or "")
-    limpo = "".join(c for c in unicodedata.normalize("NFD", limpo)
-                    if unicodedata.category(c) != "Mn").lower()
-    return [p for p in re.findall(r"[a-z]{3,}", limpo) if p not in PARADAS]
-
-
-def temas(videos, minimo=3, quantos=12):
+def temas(videos, minimo=3, quantos=12, fatia=0.005):
     """Que ASSUNTO rende mais, tirado do texto do título e da descrição.
 
     POR QUE ISTO EXISTE. O pedido não era só ver o desempenho: era ter dado que
@@ -393,6 +376,13 @@ def temas(videos, minimo=3, quantos=12):
     de um horário melhor ou de sorte. Serve pra decidir o que TESTAR, não pra
     concluir. A tela precisa dizer isso.
     """ % minimo
+    # O PISO CRESCE COM A CONTA. Três vídeos bastavam quando a leitura trazia
+    # duzentos; sobre os 2.352 do catálogo, "palavra em 3 vídeos" é sorteio —
+    # o ranking encheu de "dele" (11,6x, 3 vídeos) e "focada" (11,4x, 3
+    # vídeos), que não são assunto de nada. Meio por cento da conta é o piso
+    # que devolve palavra com significado sem apagar a conta pequena, onde o
+    # mínimo de três continua valendo.
+    minimo = max(minimo, int(round(len(videos) * fatia)))
     geral = _mediana([_n(v.get("view_count")) for v in videos])
     if not geral:
         return {"geral": None, "itens": []}
@@ -412,12 +402,12 @@ def temas(videos, minimo=3, quantos=12):
                       "mediana": med,
                       "vezes_a_geral": round(med / geral, 2) if geral else None})
     itens.sort(key=lambda x: -(x["vezes_a_geral"] or 0))
-    return {"geral": geral, "amostra": len(videos),
+    return {"geral": geral, "amostra": len(videos), "minimo": minimo,
             "itens": itens[:quantos],
             "piores": itens[-quantos:][::-1] if len(itens) > quantos else []}
 
 
-def resumo_para_conselho(fotos):
+def resumo_para_conselho(fotos, videos=None):
     """Um texto curto com o que importa pra recomendar o próximo vídeo.
 
     POR QUE EM TEXTO, e não só o JSON que a tela usa: o pedido foi que estes
@@ -428,7 +418,7 @@ def resumo_para_conselho(fotos):
     Só entra o que tem amostra suficiente. Linha sem dado é linha omitida - é
     melhor um resumo curto e verdadeiro do que um completo e inventado.
     """
-    videos = ultimos_videos(fotos)
+    videos = videos or ultimos_videos(fotos)
     if not videos:
         return "Ainda não há leitura da API do TikTok."
 
@@ -461,11 +451,14 @@ def resumo_para_conselho(fotos):
                       % (h["por_dia"][0]["rotulo"], h["por_dia"][0]["mediana"],
                          h["por_dia"][0]["videos"]))
 
-    tm = temas(videos)
-    if tm["itens"]:
-        top = ", ".join("%s (%.1fx, %d víd.)" % (i["palavra"], i["vezes_a_geral"], i["videos"])
-                        for i in tm["itens"][:5])
-        linhas.append("Assuntos acima da mediana: " + top +
+    # HASHTAG NO LUGAR DA PALAVRA SOLTA: é o assunto rotulado por ela, dá para
+    # pesquisar no TikTok e dá para repetir. Palavra solta continua no painel
+    # da tela, onde há espaço para explicar o que ela é.
+    ht = conteudo.hashtags(videos)
+    if ht["itens"]:
+        top = ", ".join("%s (%.1fx, %d víd.)" % (i["termo"], i["vezes_a_geral"], i["videos"])
+                        for i in ht["itens"][:5])
+        linhas.append("Hashtags acima da mediana: " + top +
                       " — pista para testar, não prova.")
 
     c = taxa_de_compartilhamento(videos)
@@ -487,13 +480,40 @@ def resumo_para_conselho(fotos):
     if mv["pronto"] and mv["dias"] is not None:
         linhas.append("Meia-vida: %.0f dia(s) para juntar 80%% das views (%d vídeos)."
                       % (mv["dias"], mv["amostra"]))
+
+    # A PAUTA FECHA O RESUMO. O resto do texto descreve; estas linhas mandam
+    # fazer. Vêm por último de propósito: quem lê de cima para baixo chega
+    # nelas já sabendo de onde saíram, e quem lê só o fim leva o que interessa.
+    pt = conteudo.pauta(videos, fotos)
+    if pt["itens"]:
+        linhas.append("")
+        linhas.append("O QUE FAZER AMANHÃ:")
+        for i in pt["itens"]:
+            linhas.append("  %s: %s" % (i["acao"], i["texto"]))
     return "\n".join(linhas)
 
 
-def tudo(fotos):
-    """Todos os painéis numa chamada só."""
-    videos = ultimos_videos(fotos)
-    return {
+def tudo(fotos, videos=None):
+    """Todos os painéis numa chamada só.
+
+    `videos` é o CATÁLOGO — todo vídeo que já foi visto, com o número mais
+    recente de cada um. Quando não vem, cai na última fotografia, que é como
+    era antes.
+
+    A DIVISÃO QUE IMPORTA, e o motivo de o parâmetro existir:
+
+      - **Retrato** (mediana, assuntos, horário, duração, ritmo, e tudo que
+        `conteudo.py` faz): sai do catálogo. São perguntas sobre COMO É A CONTA
+        DELA, e responder isso com a leitura de hoje — que em 06/09 trouxe 958
+        dos 2.352 vídeos — descreve os últimos três meses fingindo ser a conta
+        toda. Foi assim que o vídeo de 2,1 milhão sumiu da tela.
+      - **Trajetória** (acelerando, ressuscitou, meia-vida, largada): sai das
+        fotografias, cruas. São perguntas sobre O QUE MUDOU, e para isso só
+        vale leitura de verdade — misturar o número de anteontem inventaria
+        ganho que não houve.
+    """
+    videos = videos or ultimos_videos(fotos)
+    d = {
         "dias_de_historico": len(fotos),
         "videos": len(videos),
         "acelerando": acelerando(fotos),
@@ -505,8 +525,10 @@ def tudo(fotos):
         "duracao": duracao_que_rende(videos),
         "ritmo": ritmo(videos),
         "temas": temas(videos),
-        "resumo": resumo_para_conselho(fotos),
+        "resumo": resumo_para_conselho(fotos, videos),
     }
+    d.update(conteudo.tudo(videos, fotos))
+    return d
 
 
 def painel_de_desempenho(tk, conta=None, estado=None):
@@ -553,10 +575,23 @@ def painel_de_desempenho(tk, conta=None, estado=None):
         return {"ok": True, "tem_dados": False, "conta": escolhida,
                 "tiktok": _estado()}
 
+    # O CATÁLOGO, e o quanto a última leitura cobriu dele. Se falhar, a tela
+    # continua de pé com a última fotografia — que é o comportamento antigo,
+    # pior mas nunca vazio.
+    catalogados, cobertura = None, None
     try:
-        d = tudo(fotos)
+        import catalogo
+        pasta = tk.pasta_da_conta(escolhida)
+        catalogados = catalogo.videos(pasta)
+        cobertura = catalogo.cobertura(pasta, ultimos_videos(fotos))
+    except Exception:
+        catalogados, cobertura = None, None
+
+    try:
+        d = tudo(fotos, catalogados)
     except Exception as e:
         return {"ok": False, "erro": str(e)}
+    d["cobertura"] = cobertura
     d["ok"] = True
     d["tem_dados"] = True
     d["conta"] = escolhida
