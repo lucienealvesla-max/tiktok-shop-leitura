@@ -42,7 +42,55 @@ def texto_do_video(v):
 
 
 def titulo(v, tamanho=60):
-    return (v.get("title") or v.get("video_description") or "")[:tamanho]
+    """O título com o que ajuda a RECONHECER o vídeo nos primeiros 60 caracteres.
+
+    As hashtags e as menções saem da frente. O texto dela costuma ser
+    "🧩Quebra-cabeça A Noite Estrelada de Van Gogh. #Quebra-cabeça #puzzle
+    #hobby #tik", e cortar em 60 no bruto gastava metade do espaço com marcação
+    — sobrava um título que não distingue nada de outro título.
+
+    Se sobrar pouca coisa (vídeo cujo texto é só hashtag), volta o bruto: um
+    título ruim é melhor que um título vazio.
+    """
+    bruto = (v.get("title") or v.get("video_description") or "")
+    limpo = re.sub(r"[#@]\S+", " ", bruto)
+    limpo = re.sub(r"\s+", " ", limpo).strip(" -–—·|.")
+    return (limpo if len(limpo) >= 12 else bruto.strip())[:tamanho]
+
+
+def identidade(v, reserva=None):
+    """Como a tela mostra QUAL vídeo é este. Vai junto de todo item de painel.
+
+    POR QUE ISTO EXISTE (07/09/2026). Pergunta dele: "alguma forma melhor de
+    saber qual vídeo é qual". O título sozinho não serve e os números provam:
+    **92 vídeos dela começam com os mesmos 40 caracteres** ("🖌️✨🖌️ Kit de
+    pincéis que não acumulam pr"), 77 com outros, 35 com outros. Ela publica
+    15 por dia, muitas vezes o mesmo produto com cortes diferentes — pelo
+    título, a tela mandava refazer "um dos 92".
+
+    Três coisas resolvem, e nenhuma custa uma chamada nova: o **link** (que a
+    API já mandava e o código jogava fora antes de guardar), a **capa** e a
+    **data com a hora**. Duas publicações do mesmo produto no mesmo dia se
+    separam pela hora; o resto se separa pela imagem.
+    """
+    # A RESERVA É O REGISTRO DO CATÁLOGO. Os painéis de trajetória leem as
+    # fotografias, e fotografia não guarda capa (nem guardava link, antes de
+    # 07/09/2026). Sem a reserva, justamente os painéis mais urgentes - o que
+    # está subindo agora - seriam os únicos sem imagem e sem link.
+    if reserva:
+        v = dict({k: x for k, x in reserva.items() if x is not None},
+                 **{k: x for k, x in (v or {}).items() if x is not None})
+    publicado = quando(v.get("create_time"))
+    return {
+        "titulo": titulo(v),
+        # O link é o desempate definitivo: um clique e ela está vendo o vídeo.
+        "link": v.get("share_url") or None,
+        # A capa VENCE, e vence sozinha - reconhecer imagem é instantâneo e ler
+        # título é soletrar. Mas o endereço da capa é assinado e expira, então a
+        # tela tem que continuar inteira sem ela (ver o `onerror` no dashboard).
+        "capa": v.get("cover_image_url") or None,
+        "publicado": publicado.strftime("%d/%m/%y %Hh") if publicado else None,
+    }
 
 
 # Palavras que aparecem em tudo e não distinguem nada. Sem tirar, o "ranking de

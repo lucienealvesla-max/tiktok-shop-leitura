@@ -82,6 +82,18 @@ ol li{margin:9px 0}
 .botao:disabled{opacity:.5;cursor:default}
 .bom{color:var(--bom)}
 #carregando{color:var(--fraco);font-size:15px}
+/* QUAL VIDEO E ESTE. 92 videos dela comecam com os mesmos 40 caracteres de
+   titulo, entao o titulo sozinho nunca respondeu: a capa responde de relance,
+   a hora separa duas publicacoes do mesmo produto no mesmo dia, e o link
+   resolve o resto num clique. */
+.video{display:flex;gap:10px;align-items:flex-start}
+.video img.capa{width:44px;height:58px;object-fit:cover;border-radius:5px;
+  background:var(--sulco);flex:none}
+.video a{color:var(--texto);text-decoration:none;border-bottom:1px solid var(--sulco)}
+.video a:hover{color:var(--rosa);border-bottom-color:var(--rosa)}
+.video .quando{display:block;font-family:var(--dado);font-size:12px;color:var(--fraco);
+  margin-top:2px}
+
 /* A PAUTA. Unica parte da tela escrita em frase e nao em numero: e o que ela
    le de manha antes de gravar, e por isso e a primeira coisa da pagina. */
 .pauta{border-left:3px solid var(--rosa);padding:9px 0 9px 14px;margin:14px 0}
@@ -124,13 +136,38 @@ function n(x, casas){
   return Number(x).toLocaleString("pt-BR", {minimumFractionDigits: casas || 0,
                                             maximumFractionDigits: casas || 0});
 }
+/* O NOME DE UM VIDEO, em qualquer lugar da tela. `capa` de fora porque nem
+   todo painel tem espaco para imagem, e porque a capa e o unico pedaco daqui
+   que faz o navegador falar com a internet. */
+function videoNome(x, comCapa){
+  var t = esc(x.titulo || "(sem título)");
+  var nome = x.link
+    ? '<a href="' + esc(x.link) + '" target="_blank" rel="noopener">' + t + '</a>'
+    : t;
+  var quando = x.publicado ? '<span class="quando">' + esc(x.publicado) + '</span>' : '';
+  /* O ENDERECO DA CAPA E ASSINADO E EXPIRA. Video que nao vem numa leitura ha
+     dias fica com um endereco vencido, e sem o `onerror` a tela encheria de
+     icone de imagem quebrada - que parece defeito do painel, e nao e. */
+  var capa = (comCapa && x.capa)
+    ? '<img class="capa" src="' + esc(x.capa) + '" alt="" loading="lazy" ' +
+      'onerror="this.remove()">'
+    : "";
+  return '<div class="video">' + capa + '<div>' + nome + quando + '</div></div>';
+}
+
 function barras(itens, quente){
   var maior = 0;
   itens.forEach(function(i){ if(i.valor > maior) maior = i.valor; });
   return itens.map(function(i, k){
     var pct = maior ? (i.valor / maior) * 100 : 0;
-    return '<div class="linha"><span class="nome" title="' + esc(i.rotulo) + '">' +
-      esc(i.rotulo) + '</span>' +
+    /* O rotulo vira link quando ha video por tras dele. A dica traz a data,
+       que e o que separa dois videos de titulo igual sem gastar largura. */
+    var nome = i.link
+      ? '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' +
+        esc(i.rotulo) + '</a>'
+      : esc(i.rotulo);
+    return '<div class="linha"><span class="nome" title="' + esc(i.rotulo) +
+      (i.dica ? " · " + esc(i.dica) : "") + '">' + nome + '</span>' +
       '<span class="barra"><i class="' + (quente && quente(i, k) ? "quente" : "") +
       '" style="width:' + pct.toFixed(1) + '%"></i></span>' +
       '<span class="qtd">' + esc(i.texto) + '</span></div>';
@@ -173,9 +210,14 @@ function painelPauta(p){
     'onde saiu — conselho sem origem não se confere, e o que não se confere não ' +
     'se segue.</div>' +
     p.itens.map(function(i){
+      /* A linha que fala de um video especifico leva a capa e o link: sem
+         isso, "refaca este video" mandava ela procurar entre 92 titulos
+         iguais qual era o certo. */
+      var alvo = (i.link || i.capa)
+        ? videoNome({titulo: i.texto, link: i.link, capa: i.capa}, true)
+        : '<div class="texto">' + esc(i.texto) + '</div>';
       return '<div class="pauta"><div class="acao">' + esc(i.acao) + '</div>' +
-        '<div class="texto">' + esc(i.texto) + '</div>' +
-        '<div class="fonte">' + esc(i.de_onde) + '</div></div>';
+        alvo + '<div class="fonte">' + esc(i.de_onde) + '</div></div>';
     }).join("") + '</div>';
 }
 
@@ -353,15 +395,14 @@ function desenhar(d){
       'vale <b>enquanto ele sobe</b>: responder comentário, fixar comentário, gravar a ' +
       'parte 2, empurrar o link. Cada vídeo é comparado com os outros da mesma <b>idade</b> ' +
       '— 14 horas contra 28 horas não compara nada, porque o mais velho sempre teria mais.' +
-      '</div><table><tr><th>Vídeo</th><th>Publicado</th><th class="n">Idade</th>' +
+      '</div><table><tr><th>Vídeo</th><th class="n">Idade</th>' +
       '<th class="n">Views</th><th class="n">Contra a faixa</th></tr>' +
       lg.itens.map(function(x){
         var comp = (x.vezes_a_largada === null || x.vezes_a_largada === undefined)
           ? '<span class="sub">só ' + x.comparaveis + ' na faixa</span>'
           : (x.vezes_a_largada >= 1.5 ? '<b class="bom">' + x.vezes_a_largada + 'x</b>'
                                       : x.vezes_a_largada + 'x');
-        return '<tr><td>' + esc(x.titulo || "(sem título)") + '</td>' +
-          '<td>' + esc(x.publicado) + '</td>' +
+        return '<tr><td>' + videoNome(x, true) + '</td>' +
           '<td class="n">' + x.horas + 'h</td>' +
           '<td class="n">' + n(x.views) + '</td>' +
           '<td class="n">' + comp + '</td></tr>';
@@ -404,7 +445,7 @@ function desenhar(d){
       '<table><tr><th>Vídeo</th><th class="n">Idade</th><th class="n">Ganhou agora</th>' +
       '<th class="n">Ritmo anterior</th></tr>' +
       d.ressurreicoes.itens.map(function(x){
-        return '<tr><td>' + esc(x.titulo) + '</td><td class="n">' + x.idade_dias + 'd</td>' +
+        return '<tr><td>' + videoNome(x, true) + '</td><td class="n">' + x.idade_dias + 'd</td>' +
           '<td class="n bom">+' + n(x.ganho_ultimo) + '</td>' +
           '<td class="n">' + n(x.ritmo_anterior) + '/dia</td></tr>';
       }).join("") + '</table></div>';
@@ -422,7 +463,7 @@ function desenhar(d){
       '<table><tr><th>Vídeo</th><th class="n">Views</th><th>Por quê</th>' +
       '<th class="n">Contra a mediana</th><th class="n">Idade</th></tr>' +
       rf.itens.map(function(x){
-        return '<tr><td>' + esc(x.titulo || "(sem título)") + '</td>' +
+        return '<tr><td>' + videoNome(x, true) + '</td>' +
           '<td class="n">' + n(x.views) + '</td>' +
           '<td>' + esc(x.motivo) + '</td>' +
           '<td class="n bom">' + x.forca + 'x</td>' +
@@ -489,7 +530,8 @@ function desenhar(d){
       'Mediana e não média: um viral entre nove vídeos pequenos faria a média descrever um ' +
       'vídeo que não existe.</div>' +
       barras(cm.acima.map(function(x){
-        return {rotulo: x.titulo || "?", valor: x.views,
+        return {rotulo: x.titulo || "?", valor: x.views, link: x.link,
+                dica: x.publicado,
                 texto: n(x.views) + "  " + x.vezes_a_mediana + "x"};
       }), function(i, k){ return k === 0; }) + '</div>';
   }
@@ -502,7 +544,8 @@ function desenhar(d){
       'o vídeo para fora da audiência atual. O app só ordena pelo total bruto, onde o vídeo ' +
       'grande sempre ganha. Mediana dela: <b>' + n(tc.mediana, 2) + '%</b>.</div>' +
       barras(tc.itens.map(function(x){
-        return {rotulo: x.titulo || "?", valor: x.taxa,
+        return {rotulo: x.titulo || "?", valor: x.taxa, link: x.link,
+                dica: x.publicado,
                 texto: x.taxa + "%  (" + n(x.views) + ")"};
       }), function(i){ return i.valor >= (tc.mediana || 0) * 2; }) + '</div>';
   }
@@ -516,7 +559,8 @@ function desenhar(d){
       'é pauta pronta: o próximo vídeo é a resposta, e já nasce com público interessado. ' +
       'Mediana sua: <b>' + n(tcm.mediana, 2) + '%</b>.</div>' +
       barras(tcm.itens.map(function(x){
-        return {rotulo: x.titulo || "?", valor: x.taxa,
+        return {rotulo: x.titulo || "?", valor: x.taxa, link: x.link,
+                dica: x.publicado,
                 texto: x.taxa + "%  (" + n(x.comentarios) + ")"};
       }), function(i){ return i.valor >= (tcm.mediana || 0) * 2; }) + '</div>';
   }

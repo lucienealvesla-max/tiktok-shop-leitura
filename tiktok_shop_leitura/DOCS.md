@@ -110,6 +110,35 @@ entregue.
 Toda comparação diz de quantos vídeos saiu, e nenhuma usa média — um viral
 distorce qualquer média, e a mediana descreve o dia normal.
 
+## Qual vídeo é qual
+
+O título não identifica vídeo nenhum nesta conta: **92 vídeos começam com os
+mesmos 40 caracteres** ("🖌️✨🖌️ Kit de pincéis que não acumulam pr"), outros 77
+com outro começo, 35 com outro. São 15 publicações por dia, muitas do mesmo
+produto com cortes diferentes — pelo título, "refaça este vídeo" mandava
+adivinhar qual dos 92.
+
+Toda linha que fala de um vídeo agora traz:
+
+- a **capa**, que se reconhece de relance;
+- o **título clicável**, que abre o vídeo no TikTok;
+- a **data com a hora**, que separa duas publicações do mesmo produto no mesmo
+  dia.
+
+O título também aparece sem as hashtags e menções, então os 60 caracteres
+visíveis descrevem o vídeo em vez de gastar metade com `#hobby #tik`.
+
+**Isso só vale para leituras feitas a partir da versão 1.2.0.** O link e a capa
+sempre vieram da API e eram descartados antes de guardar; os vídeos lidos antes
+disso aparecem sem os dois até a próxima leitura completa passar por eles.
+
+O link fica guardado na fotografia (são ~55 caracteres, e nunca mudam). **A capa
+não**: o endereço dela é assinado e expira, então guardar uma cópia por dia
+seriam ~700 KB diários de endereço já vencido no cartão do Raspberry. A capa
+mora só no `catalogo.json`, que é reescrito a cada leitura em vez de somado —
+e quando um endereço expira, a imagem simplesmente não aparece, sem quebrar a
+tela.
+
 ## Só uma máquina pode ler
 
 O `refresh_token` do TikTok é **rotativo**: renovar pode devolver um novo, e quem

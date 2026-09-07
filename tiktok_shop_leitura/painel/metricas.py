@@ -28,6 +28,7 @@ from datetime import datetime
 
 import conteudo
 from comum import MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS
+from comum import identidade as _identidade
 from comum import mediana as _mediana
 from comum import n as _n
 from comum import palavras as _palavras
@@ -96,7 +97,7 @@ def _ganhos_diarios(pontos):
 #  PRECISAM DE HISTÓRICO
 # =========================================================================
 
-def acelerando(fotos, quantos=10):
+def acelerando(fotos, quantos=10, por_id=None):
     """O que está pegando fogo AGORA: views ganhas na última leitura e em 7.
 
     É a pergunta mais urgente de quem posta todo dia, e o app não responde: lá
@@ -115,15 +116,15 @@ def acelerando(fotos, quantos=10):
         if not ganhos:
             continue
         v = atuais.get(vid) or {}
-        itens.append({
+        reserva = (por_id or {}).get(vid)
+        itens.append(dict(_identidade(v, reserva), **{
             "id": vid,
-            "titulo": (v.get("title") or v.get("video_description") or "")[:60],
-            "views": _n(v.get("view_count")),
+            "views": _n(v.get("view_count")) or _n((reserva or {}).get("view_count")),
             "ganho_ultimo": ganhos[-1][1],
             "ganho_por_dia": round(ganhos[-1][2], 1),
             "dias_do_intervalo": _dias_entre(pontos[-2][0], pontos[-1][0]),
             "ganho_7d": sum(g for _, g, _r in ganhos[-7:]),
-        })
+        }))
     # ORDENA PELO RITMO, não pelo bruto: entre um vídeo que ganhou 900 views em
     # três dias e um que ganhou 500 em um, quem está pegando fogo agora é o
     # segundo — e "agora" é a pergunta inteira deste painel.
@@ -131,7 +132,7 @@ def acelerando(fotos, quantos=10):
     return {"pronto": True, "itens": itens[:quantos]}
 
 
-def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50):
+def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None):
     """Vídeo velho que voltou a crescer.
 
     POR QUE ISTO IMPORTA MAIS DO QUE PARECE: o TikTok revive vídeo antigo o tempo
@@ -153,7 +154,7 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50):
         ganhos = _ganhos_diarios(pontos)
         if len(ganhos) < 3:
             continue
-        v = atuais.get(vid) or {}
+        v = atuais.get(vid) or (por_id or {}).get(vid) or {}
         nasceu = _quando(v.get("create_time"))
         if not nasceu or (agora - nasceu).days < idade_minima:
             continue
@@ -164,14 +165,13 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50):
         # Vídeo que estava parado de vez (mediana 0) e ganhou acima do piso já é
         # ressurreição: não dá pra multiplicar por zero e exigir um fator.
         if antes == 0 or ultimo >= antes * fator:
-            itens.append({
+            itens.append(dict(_identidade(v, (por_id or {}).get(vid)), **{
                 "id": vid,
-                "titulo": (v.get("title") or v.get("video_description") or "")[:60],
                 "views": _n(v.get("view_count")),
                 "ganho_ultimo": ultimo,
                 "ritmo_anterior": antes,
                 "idade_dias": (agora - nasceu).days,
-            })
+            }))
     itens.sort(key=lambda x: -x["ganho_ultimo"])
     return {"pronto": True, "itens": itens}
 
@@ -238,8 +238,8 @@ def contra_a_mediana(videos, quantos=10):
 
     def linha(v):
         vw = _n(v.get("view_count"))
-        return {"titulo": (v.get("title") or v.get("video_description") or "")[:60],
-                "views": vw, "vezes_a_mediana": round(vw / med, 2) if med else None}
+        return dict(_identidade(v), id=v.get("id"), views=vw,
+                    vezes_a_mediana=round(vw / med, 2) if med else None)
 
     return {"mediana": med, "amostra": len(videos),
             "acima": [linha(v) for v in ordenados[:quantos]],
@@ -263,12 +263,12 @@ def taxa_de_compartilhamento(videos, quantos=10):
         vw = _n(v.get("view_count"))
         if vw < MINIMO_DE_VIEWS:
             continue
-        itens.append({
-            "titulo": (v.get("title") or v.get("video_description") or "")[:60],
+        itens.append(dict(_identidade(v), **{
+            "id": v.get("id"),
             "views": vw,
             "compartilhamentos": _n(v.get("share_count")),
             "taxa": round(_n(v.get("share_count")) / vw * 100, 2),
-        })
+        }))
     itens.sort(key=lambda x: -x["taxa"])
     return {"itens": itens[:quantos], "amostra": len(itens),
             "mediana": _mediana([i["taxa"] for i in itens])}
@@ -513,11 +513,16 @@ def tudo(fotos, videos=None):
         ganho que não houve.
     """
     videos = videos or ultimos_videos(fotos)
+    # QUEM É CADA VÍDEO, num mapa. Os painéis de trajetória saem das
+    # fotografias, e fotografia não tem capa; o catálogo tem. Sem isto, o
+    # painel "Acelerando" - o mais urgente da tela - seria o único mostrando
+    # vídeo sem imagem e sem link.
+    por_id = {v.get("id"): v for v in videos if v.get("id")}
     d = {
         "dias_de_historico": len(fotos),
         "videos": len(videos),
-        "acelerando": acelerando(fotos),
-        "ressurreicoes": ressurreicoes(fotos),
+        "acelerando": acelerando(fotos, por_id=por_id),
+        "ressurreicoes": ressurreicoes(fotos, por_id=por_id),
         "meia_vida": meia_vida(fotos),
         "contra_a_mediana": contra_a_mediana(videos),
         "compartilhamento": taxa_de_compartilhamento(videos),
@@ -527,7 +532,7 @@ def tudo(fotos, videos=None):
         "temas": temas(videos),
         "resumo": resumo_para_conselho(fotos, videos),
     }
-    d.update(conteudo.tudo(videos, fotos))
+    d.update(conteudo.tudo(videos, fotos, por_id=por_id))
     return d
 
 

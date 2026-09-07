@@ -29,8 +29,8 @@ parou de postar" cabe; "distribuição de views por decil" não cabe.
 import re
 from datetime import datetime, timedelta
 
-from comum import (MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS, mediana, n, palavras,
-                   quando, texto_do_video, titulo)
+from comum import (MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS, identidade, mediana, n,
+                   palavras, quando, texto_do_video)
 
 # Uma marca/parceria precisa de menos vídeos que um assunto para virar linha na
 # tela: ela tem poucas parcerias e cada uma vale muito, então exigir a mesma
@@ -240,9 +240,8 @@ def refazer(videos, quantos=10, idade_minima=14, fator=2.0):
         forca_c = (taxa_c / med_coment) if med_coment else 0
         if max(forca_s, forca_c) < fator:
             continue
-        itens.append({
+        itens.append(dict(identidade(v), **{
             "id": v.get("id"),
-            "titulo": titulo(v),
             "views": vistos,
             "taxa_compartilhamento": round(taxa_s, 2),
             "taxa_comentario": round(taxa_c, 2),
@@ -250,7 +249,7 @@ def refazer(videos, quantos=10, idade_minima=14, fator=2.0):
             "idade_dias": (agora - nasceu).days,
             "motivo": ("compartilharam muito" if forca_s >= forca_c
                        else "comentaram muito"),
-        })
+        }))
     itens.sort(key=lambda x: -x["forca"])
     return {"itens": itens[:quantos], "amostra": len(maduros),
             "mediana_views": med_views,
@@ -311,9 +310,9 @@ def taxa_de_comentario(videos, quantos=10):
         vistos = n(v.get("view_count"))
         if vistos < MINIMO_DE_VIEWS:
             continue
-        itens.append({"id": v.get("id"), "titulo": titulo(v), "views": vistos,
-                      "comentarios": n(v.get("comment_count")),
-                      "taxa": round(n(v.get("comment_count")) / vistos * 100, 2)})
+        itens.append(dict(identidade(v), id=v.get("id"), views=vistos,
+                          comentarios=n(v.get("comment_count")),
+                          taxa=round(n(v.get("comment_count")) / vistos * 100, 2)))
     itens.sort(key=lambda x: -x["taxa"])
     return {"itens": itens[:quantos], "amostra": len(itens),
             "mediana": mediana([i["taxa"] for i in itens])}
@@ -365,7 +364,7 @@ def cadencia(videos, maturacao_dias=3, quantos=21):
     return resposta
 
 
-def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12):
+def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12, por_id=None):
     """Quanto o vídeo faz nas primeiras horas — e quais estão acima disso AGORA.
 
     POR QUE ISTO É O PAINEL MAIS URGENTE DE TODOS. Reagir a um vídeo que está
@@ -416,11 +415,12 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12):
             horas = (instante - nasceu).total_seconds() / 3600.0
             if horas <= 0 or horas > janela_horas:
                 continue        # nasceu depois da leitura, ou já é vídeo velho
-            primeira_leitura[vid] = {
-                "id": vid, "titulo": titulo(v),
-                "views": n(v.get("view_count")), "horas": round(horas, 1),
-                "faixa": int(horas // faixa_horas), "nasceu": nasceu,
-            }
+            primeira_leitura[vid] = dict(
+                identidade(v, (por_id or {}).get(vid)), **{
+                    "id": vid, "views": n(v.get("view_count")),
+                    "horas": round(horas, 1),
+                    "faixa": int(horas // faixa_horas), "nasceu": nasceu,
+                })
 
     if not primeira_leitura:
         return {"pronto": True, "itens": [], "mediana": None, "amostra": 0,
@@ -444,7 +444,7 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12):
         x["faixa_rotulo"] = "%d-%dh" % (x["faixa"] * faixa_horas,
                                         (x["faixa"] + 1) * faixa_horas)
         x["comparaveis"] = len(por_faixa.get(x["faixa"]) or [])
-        x["publicado"] = x.pop("nasceu").strftime("%d/%m %Hh")
+        x.pop("nasceu")
     return {"pronto": True, "mediana": mediana(list(primeira_leitura and
                                                     [x["views"] for x in
                                                      primeira_leitura.values()])),
@@ -454,7 +454,7 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12):
 
 # ------------------------------------------------------------------- a pauta
 
-def pauta(videos, fotos, quantos=8):
+def pauta(videos, fotos, quantos=8, por_id=None):
     """A lista do dia seguinte, em frases que ela pode executar.
 
     POR QUE EM FRASE, e não mais um gráfico: nenhum painel desta tela diz o que
@@ -467,7 +467,7 @@ def pauta(videos, fotos, quantos=8):
     """
     linhas = []
 
-    lg = largada(fotos)
+    lg = largada(fotos, por_id=por_id)
     if lg.get("pronto") and lg.get("mediana"):
         subindo = sorted([i for i in lg["itens"]
                           if (i["vezes_a_largada"] or 0) >= 1.5],
@@ -475,6 +475,7 @@ def pauta(videos, fotos, quantos=8):
         for i in subindo[:2]:
             linhas.append({
                 "acao": "EMPURRE HOJE",
+                "link": i.get("link"), "capa": i.get("capa"),
                 "texto": '"%s" largou %sx acima do normal (%s views em %sh). '
                          "Responda os comentários e grave a parte 2 enquanto sobe."
                          % (i["titulo"], i["vezes_a_largada"],
@@ -488,6 +489,7 @@ def pauta(videos, fotos, quantos=8):
     for i in rf["itens"][:2]:
         linhas.append({
             "acao": "REFAÇA",
+            "link": i.get("link"), "capa": i.get("capa"),
             "texto": '"%s" só fez %s views, mas %s (%.2f%%, %sx a sua mediana). '
                      "O assunto passou no teste; troque capa e gancho e poste de novo."
                      % (i["titulo"], "%.0f" % i["views"], i["motivo"],
@@ -584,11 +586,11 @@ def _ranking_enxuto(r):
     return limpo
 
 
-def tudo(videos, fotos):
+def tudo(videos, fotos, por_id=None):
     """Todos os painéis de conteúdo numa chamada só."""
     return {
-        "pauta": pauta(videos, fotos),
-        "largada": largada(fotos),
+        "pauta": pauta(videos, fotos, por_id=por_id),
+        "largada": largada(fotos, por_id=por_id),
         "hashtags": _ranking_enxuto(hashtags(videos)),
         "parcerias": _ranking_enxuto(parcerias(videos)),
         "frases": _ranking_enxuto(frases(videos)),

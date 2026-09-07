@@ -44,7 +44,11 @@ from pathlib import Path
 # Os campos que a fotografia guarda. O catálogo guarda os mesmos: qualquer
 # métrica que hoje roda sobre a fotografia tem que rodar sobre ele sem adaptar.
 CAMPOS = ("id", "create_time", "duration", "view_count", "like_count",
-          "comment_count", "share_count", "title", "video_description")
+          "comment_count", "share_count", "title", "video_description",
+          # O link e a capa: é o que faz a tela dizer QUAL vídeo é. A capa só
+          # existe aqui - o endereço dela expira, e uma fotografia por dia de
+          # endereço vencido seria peso morto no cartão do Raspberry.
+          "share_url", "cover_image_url")
 
 
 def caminho(pasta_da_conta):
@@ -107,6 +111,12 @@ def juntar(videos_por_id, videos, dia):
         # dizer "este vídeo é novo no catálogo" sem confundir com a data de
         # publicação — vídeo antigo pode aparecer pela primeira vez hoje.
         novo["catalogado_em"] = (antigo or {}).get("catalogado_em") or dia
+        # O QUE NÃO VEIO AGORA, NÃO SE APAGA. Uma reconstrução a partir das
+        # fotografias não tem capa nenhuma (a capa nunca é guardada lá), e sem
+        # esta linha ela apagaria as capas que a leitura de hoje trouxe.
+        for campo in ("share_url", "cover_image_url"):
+            if not novo.get(campo) and (antigo or {}).get(campo):
+                novo[campo] = antigo[campo]
         fora[vid] = novo
     return fora
 

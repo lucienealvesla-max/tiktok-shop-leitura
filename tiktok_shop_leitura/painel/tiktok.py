@@ -78,7 +78,8 @@ ESCOPOS = "user.info.basic,video.list"
 # CÓDIGO (G14-A-CTA2) - sem isso o casamento com o arquivo montado volta a
 # depender só da duração, que já foi medida e quase não separa nada.
 CAMPOS = ["id", "create_time", "title", "video_description", "duration",
-          "view_count", "like_count", "comment_count", "share_count", "share_url"]
+          "view_count", "like_count", "comment_count", "share_count",
+          "share_url", "cover_image_url"]
 
 _pendente = {}     # state -> code_verifier, entre o "entrar" e o "retorno"
 
@@ -481,12 +482,22 @@ def guardar_foto(open_id, videos):
         pasta.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         return False, str(e)
+    # O `share_url` ENTRA (07/09/2026), e a capa NÃO. Os dois vinham da API e
+    # os dois eram jogados fora aqui, mas eles têm custos diferentes:
+    #
+    #   - o link tem ~55 caracteres, nunca muda, e é o que responde "qual vídeo
+    #     é este" — 92 vídeos dela começam com os mesmos 40 caracteres de
+    #     título. Guardar custa ~130 KB por dia e vale cada byte.
+    #   - o endereço da capa tem ~300 caracteres, é ASSINADO e EXPIRA. Guardar
+    #     numa fotografia por dia seriam ~700 KB diários de endereço que já
+    #     nasce vencendo, num cartão de Raspberry. A capa mora só no catálogo,
+    #     que é um arquivo por conta, reescrito a cada leitura em vez de somado.
     magros = []
     for v in videos or []:
         magros.append({k: v.get(k) for k in
                        ("id", "create_time", "duration", "view_count",
                         "like_count", "comment_count", "share_count",
-                        "title", "video_description")})
+                        "title", "video_description", "share_url")})
     alvo = pasta / (datetime.now().strftime("%Y-%m-%d") + ".json")
     # A FOTOGRAFIA DO DIA E UMA, e uma leitura parcial nao pode encolhe-la.
     # Cenario real: a tarefa das 21h grava os 2.327 videos; ela aperta "Ler
@@ -521,8 +532,10 @@ def guardar_foto(open_id, videos):
     recado_catalogo = ""
     try:
         import catalogo
+        # O CATÁLOGO RECEBE O BRUTO, não `magros`: é dele que sai a capa, que
+        # de propósito não entra na fotografia.
         ok_cat, recado_catalogo = catalogo.atualizar(
-            pasta_da_conta(open_id), magros,
+            pasta_da_conta(open_id), videos,
             datetime.now().strftime("%Y-%m-%d"))
         if not ok_cat:
             recado_catalogo = "catálogo não gravou: " + str(recado_catalogo)
