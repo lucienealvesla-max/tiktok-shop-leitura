@@ -190,6 +190,10 @@ class Alca(BaseHTTPRequestHandler):
                     if (d or {}).get("parcial"):
                         recado += " — VEIO PELA METADE: " + str(
                             d.get("motivo") or d.get("erro") or "sem motivo")
+                    # Os seguidores do dia, depois dos videos (ver puxar_diario).
+                    if guardou:
+                        _ok_p, recado_p = tiktok.perfil_de_hoje(conta["open_id"])
+                        recado += " · " + recado_p
                     linha["recado"] = recado
                     algum = algum or guardou
             except Exception as e:

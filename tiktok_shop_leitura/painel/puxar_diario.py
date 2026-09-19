@@ -123,6 +123,14 @@ def main():
         print("%s: %s" % (conta["nome"],
                           recado if guardou else "nao consegui guardar: " + recado))
 
+        # OS SEGUIDORES DO DIA, na mesma fotografia, DEPOIS dos videos: a
+        # fotografia dos videos e' a unica coisa insubstituivel, e o perfil
+        # nao pode atrapalha-la. Uma chamada, e a serie de seguidores passa a
+        # existir - o app so mostra o numero de agora.
+        if guardou:
+            _ok_p, recado_p = tiktok.perfil_de_hoje(conta["open_id"])
+            print("%s: %s" % (conta["nome"], recado_p))
+
         # A cópia em CSV na pasta de dados continua sendo feita: é o que mantém
         # o caminho da planilha vivo se a API fechar um dia.
         try:

@@ -31,7 +31,28 @@ conectada. O log avisa o que está faltando, em vez de falhar em silêncio.
   aba Configuração do add-on), lê todos os perfis conectados e guarda uma
   fotografia crua por perfil. Se a leitura do dia já existir e estiver
   completa, ele sai quieto — disparo repetido não gasta chamada.
+- **Lê os seguidores junto** (desde a 1.5.0): uma chamada a mais por dia, e o
+  número entra na mesma fotografia. É o que faz existir a série "quantos por
+  dia", que o app não tem. Precisa do escopo `user.info.stats` — veja abaixo.
 - **Serve o dashboard** pela barra lateral (marque "Mostrar na barra lateral").
+
+## Seguidores: o escopo que a conta precisa ter
+
+O Programa de Recompensas do Criador mede seguidores, e a API só os entrega
+com o escopo **`user.info.stats`** (até fevereiro de 2024 vinham no
+`user.info.basic`; o TikTok separou). Dois lugares precisam tê-lo:
+
+1. **O app**, em developers.tiktok.com → seu app → *Scopes* → *Add scopes* →
+   `user.info.stats`. Sem isso o login nem oferece o escopo.
+2. **A conta**, que precisa **entrar de novo** depois disso — autorização já
+   dada não ganha escopo sozinha. O login mora no computador (é para
+   `localhost` que o TikTok devolve); depois de entrar, copie o `token.json`
+   novo para `/share/tiktok-shop/.tiktok_contas/<perfil>/`.
+
+Enquanto a conta não tiver o escopo, o cartão de seguidores diz exatamente
+isso ("a conta precisa ser autorizada de novo com o escopo user.info.stats"),
+e o motivo fica gravado na fotografia do dia (`perfil_erro`). Nenhum número
+velho é mostrado no lugar.
 
 ## Qual a melhor hora
 
@@ -142,8 +163,10 @@ refaça aquele. Cada linha diz de onde saiu.
 **Monetização** — as três regras do Programa de Recompensas do Criador ao lado
 do medido: **views ganhas nos últimos 30 dias** (a regra pede 100 mil; até
 completar 30 dias de leitura o número é projetado e a tela diz isso),
-**seguidores** (a regra pede 10 mil; ainda não é lido — falta o escopo
-`user.info.stats`, e a tela diz isso em vez de mostrar um número velho) e
+**seguidores** (a regra pede 10 mil; lido uma vez por dia com o escopo
+`user.info.stats`, com o ganho desde a leitura anterior e em 7 dias — e, se a
+conta ainda não tiver o escopo, a tela diz isso em vez de mostrar um número
+velho) e
 **quantos dos vídeos publicados no período passam de 1 minuto** — só esses
 contam. Embaixo, quantas views novas cada faixa de duração ganhou por vídeo:
 medido nos dados dela, o vídeo de mais de 1 minuto ganhava **de 5 a 7 vezes**

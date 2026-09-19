@@ -31,8 +31,8 @@ Ingress e pode acabar atrás de um túnel para a internet.
 1. **Home Assistant OS em aarch64** (Raspberry Pi 4 de 64 bits, por exemplo).
 2. **Um app de desenvolvedor do TikTok**, do tipo **Desktop** — só ele aceita
    `http://localhost:<porta>` como endereço de retorno. Você precisa do
-   `client_key` e do `client_secret`, com os escopos `user.info.basic` e
-   `video.list`.
+   `client_key` e do `client_secret`, com os escopos `user.info.basic`,
+   `user.info.stats` (seguidores) e `video.list`.
 3. **A conexão já autorizada.** Este add-on não faz o login: ele consome uma
    pasta de contas já autorizadas. Veja a documentação do add-on.
 

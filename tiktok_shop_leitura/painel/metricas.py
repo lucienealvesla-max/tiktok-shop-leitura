@@ -263,6 +263,41 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
     janela = regras["janela_dias"]
     fora = {"regras": regras, "janela_dias": janela, "pronto": False,
             "seguidores": None, "seguidores_ok": None}
+
+    # SEGUIDORES, da série de perfis guardados nas fotografias (desde 1.5.0).
+    # Vem ANTES do piso de duas fotografias: o número de hoje já vale sozinho,
+    # é a regra mais direta do programa. O delta precisa de duas leituras.
+    pontos = [(f.get("dia"), _n((f.get("perfil") or {}).get("seguidores")))
+              for f in fotos
+              if (f.get("perfil") or {}).get("seguidores") is not None]
+    if pontos:
+        atual = pontos[-1][1]
+        fora.update({
+            "seguidores": int(atual),
+            "seguidores_ok": atual >= regras["seguidores"],
+            "seguidores_lido_em": pontos[-1][0],
+            "seguidores_dias": len(pontos),
+        })
+        if len(pontos) >= 2:
+            anterior = pontos[-2]
+            fora["seguidores_ganho_ultimo"] = int(atual - anterior[1])
+            fora["seguidores_por_dia"] = round(
+                (atual - anterior[1]) / _dias_entre(anterior[0], pontos[-1][0]), 1)
+            try:
+                corte7 = (datetime.strptime(pontos[-1][0], "%Y-%m-%d")
+                          - timedelta(days=7)).strftime("%Y-%m-%d")
+                base7 = [p for p in pontos if (p[0] or "") >= corte7]
+                fora["seguidores_ganho_7d"] = (int(atual - base7[0][1])
+                                               if len(base7) >= 2 else None)
+            except ValueError:
+                fora["seguidores_ganho_7d"] = None
+    else:
+        # O último motivo gravado, para a tela dizer "falta o escopo" em vez
+        # de um traço mudo.
+        fora["seguidores_erro"] = next(
+            (f.get("perfil_erro") for f in reversed(fotos) if f.get("perfil_erro")),
+            None)
+
     if len(fotos) < 2:
         fora["faltam"] = 2 - len(fotos)
         return fora

@@ -239,6 +239,18 @@ function painelPauta(p){
     }).join("") + '</div>';
 }
 
+/* POR QUE NAO HA SEGUIDORES. Um traco mudo parece defeito; o motivo vem
+   gravado na fotografia (perfil_erro) e a frase diz o que fazer. */
+function seguidoresPorQue(e){
+  e = e || {};
+  if(e.falta_escopo){
+    return 'a conta precisa ser <b>autorizada de novo</b> com o escopo ' +
+      '<code>user.info.stats</code> — no computador, onde mora o login.';
+  }
+  if(e.erro) return 'não lido: ' + esc(e.erro);
+  return 'ainda não lido — entra na próxima leitura.';
+}
+
 /* MONETIZACAO. As regras do Programa de Recompensas vem do servidor
    (`regras`), nunca escritas aqui: o TikTok muda os numeros sem avisar, e a
    tela tem que mostrar a regra que o calculo usou. */
@@ -255,12 +267,20 @@ function painelMonetizacao(m){
       '<div class="sub">regra: ' + n(r.views_30d) + ' · <b>' + n(m.views_vezes, 1) + 'x</b>' +
         (m.projetado ? ' · medido em ' + m.dias_medidos + ' dia(s)' : '') + '</div>' +
     '</div>' +
-    '<div class="kpi vazio">' +
+    '<div class="kpi ' + (m.seguidores == null ? "vazio" : (m.seguidores_ok ? "ok" : "ruim")) + '">' +
       '<div class="numerao">' + (m.seguidores == null ? "—" : n(m.seguidores)) + '</div>' +
-      '<div class="rotulo">seguidores</div>' +
-      '<div class="sub">' + (m.seguidores == null
-        ? 'ainda não lido — falta o escopo <code>user.info.stats</code>'
-        : 'regra: ' + n(r.seguidores)) + '</div>' +
+      '<div class="rotulo">seguidores' +
+        (m.seguidores_lido_em ? ' · ' + esc(m.seguidores_lido_em) : '') + '</div>' +
+      '<div class="sub">' + (m.seguidores == null ? seguidoresPorQue(m.seguidores_erro)
+        : 'regra: ' + n(r.seguidores) +
+          (m.seguidores_ganho_ultimo != null
+            ? ' · <b>' + (m.seguidores_ganho_ultimo >= 0 ? '+' : '') +
+              n(m.seguidores_ganho_ultimo) + '</b> desde a leitura anterior' : '') +
+          (m.seguidores_ganho_7d != null
+            ? ' · ' + (m.seguidores_ganho_7d >= 0 ? '+' : '') + n(m.seguidores_ganho_7d) +
+              ' em 7 dias' : '') +
+          (m.seguidores_dias === 1 ? ' · primeira leitura; o ritmo aparece amanhã' : '')) +
+      '</div>' +
     '</div>' +
     '<div class="kpi ' + (m.pct_longos == null ? "vazio" : (m.pct_longos >= 50 ? "ok" : "ruim")) + '">' +
       '<div class="numerao">' + (m.pct_longos == null ? "—" : n(m.pct_longos, 0) + '%') + '</div>' +
@@ -343,9 +363,10 @@ function blocoConexao(tk){
       '<div class="sub">Tudo nesta tela sai da API do TikTok. Configurada uma vez, o painel ' +
       'guarda uma leitura por dia e passa a mostrar o que o app não mostra.</div><ol>' +
       '<li>Em <b>developers.tiktok.com</b>, crie um app do tipo <b>Desktop</b>.</li>' +
-      '<li>Adicione <b>Login Kit</b> e <b>Display API</b> (escopos <code>user.info.basic</code> ' +
-      'e <code>video.list</code>). O <code>video.list</code> só aparece depois do ' +
-      'Display API entrar.</li>' +
+      '<li>Adicione <b>Login Kit</b> e <b>Display API</b> (escopos <code>user.info.basic</code>, ' +
+      '<code>user.info.stats</code> e <code>video.list</code>). O <code>video.list</code> só ' +
+      'aparece depois do Display API entrar; o <code>user.info.stats</code> é o que traz ' +
+      'seguidores.</li>' +
       '<li>Endereço de retorno, em <b>Products → Login Kit → Desktop</b> (não é a caixa ' +
       'de verificação de URL, que pede https e nunca aceita localhost):<br><code>' +
       esc(tk.retorno || "") + '</code></li>' +

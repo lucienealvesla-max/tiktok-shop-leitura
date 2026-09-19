@@ -279,6 +279,24 @@ def pauta(largada_, refazer_, monet, quantos=8):
     linhas = []
 
     m = monet or {}
+    # SEGUIDORES ABAIXO DA REGRA vem antes de tudo: é a porta do programa. Só
+    # aparece quando o número foi lido - sem leitura, o cartão da monetização
+    # já diz o que falta, e repetir aqui seria conselho sem dado.
+    seg = m.get("seguidores")
+    piso = (m.get("regras") or {}).get("seguidores") or 10000
+    if seg is not None and seg < piso:
+        faltam = piso - seg
+        ritmo = m.get("seguidores_por_dia")
+        texto = "A conta tem %s seguidores; a regra pede %s — faltam %s." % (
+            "{:,}".format(int(seg)).replace(",", "."),
+            "{:,}".format(int(piso)).replace(",", "."),
+            "{:,}".format(int(faltam)).replace(",", "."))
+        if ritmo and ritmo > 0:
+            texto += " No ritmo atual (%s por dia) são uns %d dias." % (
+                ("%.0f" % ritmo), int(round(faltam / ritmo)))
+        linhas.append({"acao": "FALTAM SEGUIDORES", "texto": texto,
+                       "de_onde": "perfil lido em %s" % m.get("seguidores_lido_em")})
+
     if m.get("pronto"):
         regras = m.get("regras") or {}
         pct = m.get("pct_longos")

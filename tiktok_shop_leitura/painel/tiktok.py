@@ -72,7 +72,15 @@ AUTORIZAR = "https://www.tiktok.com/v2/auth/authorize/"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 LISTA_URL = "https://open.tiktokapis.com/v2/video/list/"
 
-ESCOPOS = "user.info.basic,video.list"
+# `user.info.stats` ENTROU EM 19/09/2026 (1.5.0): é o escopo que devolve
+# seguidores, seguindo, curtidas e total de vídeos. Antes de 29/02/2024 esses
+# campos vinham no `user.info.basic`; o TikTok os separou, e pedir sem o
+# escopo devolve 401 `scope_not_authorized`. Ela passou de 10 mil seguidores e
+# o Programa de Recompensas mede seguidores - sem este escopo o painel não
+# tem como dizer se ela está dentro da regra. CONTA JÁ AUTORIZADA NÃO GANHA O
+# ESCOPO SOZINHA: precisa entrar de novo (no computador, onde mora o login)
+# depois de o escopo ser adicionado ao app em developers.tiktok.com.
+ESCOPOS = "user.info.basic,user.info.stats,video.list"
 
 # O que se pede por vídeo. `video_description` entra porque é nela que mora o
 # CÓDIGO (G14-A-CTA2) - sem isso o casamento com o arquivo montado volta a
@@ -80,6 +88,11 @@ ESCOPOS = "user.info.basic,video.list"
 CAMPOS = ["id", "create_time", "title", "video_description", "duration",
           "view_count", "like_count", "comment_count", "share_count",
           "share_url", "cover_image_url"]
+
+# O que se pede da CONTA, uma vez por dia, junto da leitura dos vídeos.
+PERFIL_URL = "https://open.tiktokapis.com/v2/user/info/"
+CAMPOS_DO_PERFIL = ["follower_count", "following_count", "likes_count",
+                    "video_count"]
 
 _pendente = {}     # state -> code_verifier, entre o "entrar" e o "retorno"
 
@@ -552,18 +565,24 @@ def guardar_foto(open_id, videos):
         juntos = {v.get("id"): v for v in (antes.get("videos") or [])}
         leituras = int(antes.get("leituras") or 1)
     except (OSError, ValueError):
-        juntos, leituras = {}, 0
+        antes, juntos, leituras = {}, {}, 0
     if juntos:
         for v in magros:
             juntos[v.get("id")] = v
         magros = list(juntos.values())
+    # `leituras` é quantas vezes a API foi consultada HOJE para esta conta.
+    # É o que deixa `puxar_diario` insistir numa leitura que veio pela
+    # metade sem virar laço infinito de pedidos se a API estiver fechada.
+    registro = {"lido_em": int(time.time()), "leituras": leituras + 1,
+                "videos": magros}
+    # O PERFIL LIDO HOJE NÃO SE PERDE numa segunda leitura de vídeos: ele mora
+    # na mesma fotografia (ver guardar_perfil), e reescrever o arquivo sem
+    # copiá-lo apagaria o número de seguidores do dia na tentativa seguinte.
+    for chave in ("perfil", "perfil_erro"):
+        if antes.get(chave) is not None:
+            registro[chave] = antes[chave]
     try:
-        # `leituras` é quantas vezes a API foi consultada HOJE para esta conta.
-        # É o que deixa `puxar_diario` insistir numa leitura que veio pela
-        # metade sem virar laço infinito de pedidos se a API estiver fechada.
-        alvo.write_text(json.dumps({"lido_em": int(time.time()),
-                                    "leituras": leituras + 1,
-                                    "videos": magros}), encoding="utf-8")
+        alvo.write_text(json.dumps(registro), encoding="utf-8")
     except OSError as e:
         return False, str(e)
 
@@ -585,6 +604,92 @@ def guardar_foto(open_id, videos):
         recado_catalogo = "catálogo não gravou: %s" % e
     return True, "%d video(s) fotografados em %s%s" % (
         len(magros), alvo.name, (" · " + recado_catalogo) if recado_catalogo else "")
+
+
+def puxar_perfil(open_id):
+    """Seguidores, seguindo, curtidas e total de vídeos da conta. (ok, dados)
+
+    POR QUE ISTO EXISTE (19/09/2026). Ela passou de 10 mil seguidores, e o
+    Programa de Recompensas do Criador mede exatamente isso. O app mostra o
+    número de agora; a série - quantos por dia, qual dia saltou - só existe se
+    alguém guardar leituras sucessivas, que é o que este arquivo faz com os
+    vídeos desde agosto. Uma chamada a mais por dia, ao lado das 117 da lista.
+
+    QUANDO A CONTA NÃO TEM O ESCOPO, a API responde `scope_not_authorized`, e
+    isso volta rotulado (`falta_escopo`) para a tela dizer o que fazer em vez
+    de mostrar um traço mudo. Nunca levanta.
+    """
+    token, erro = _valido(open_id)
+    if not token:
+        return False, {"erro": erro}
+    ok, d = _pedir(PERFIL_URL + "?fields=" + ",".join(CAMPOS_DO_PERFIL), None,
+                   {"Authorization": "Bearer " + token}, "GET")
+    d = d if isinstance(d, dict) else {}
+    err = d.get("error") or {}
+    # A API devolve 200 com `error.code == "ok"` quando dá certo; o erro de
+    # escopo vem como 401 com o código no mesmo lugar.
+    codigo = str(err.get("code") or "")
+    if not ok or (codigo and codigo != "ok"):
+        return False, {"erro": err.get("message") or d.get("erro") or str(d),
+                       "codigo": codigo,
+                       "falta_escopo": codigo == "scope_not_authorized"}
+    u = (d.get("data") or {}).get("user") or {}
+    return True, {"seguidores": u.get("follower_count"),
+                  "seguindo": u.get("following_count"),
+                  "curtidas": u.get("likes_count"),
+                  "videos": u.get("video_count"),
+                  "lido_em": int(time.time())}
+
+
+def guardar_perfil(open_id, perfil=None, erro=None):
+    """Grava o perfil de hoje NA FOTOGRAFIA DE HOJE. (ok, mensagem)
+
+    Na fotografia, e não num arquivo à parte: "um arquivo por dia, cru" é a
+    regra da casa, e é o que deixa `metricas` montar a série de seguidores do
+    mesmo jeito que monta a de views. Só grava se a fotografia existir - criar
+    uma fotografia sem vídeos só para guardar seguidores faria `puxar_diario`
+    achar que a leitura do dia já aconteceu e pular os vídeos.
+
+    O erro também fica gravado (`perfil_erro`): é dele que a tela tira "falta
+    o escopo" em vez de um traço sem explicação.
+    """
+    alvo = (pasta_da_conta(open_id) / "fotos" /
+            (datetime.now().strftime("%Y-%m-%d") + ".json"))
+    try:
+        d = json.loads(alvo.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False, "sem fotografia de hoje para guardar o perfil"
+    if perfil:
+        d["perfil"] = perfil
+        d.pop("perfil_erro", None)
+    else:
+        d["perfil_erro"] = erro or {"erro": "sem motivo"}
+    try:
+        alvo.write_text(json.dumps(d), encoding="utf-8")
+    except OSError as e:
+        return False, str(e)
+    if perfil:
+        return True, "%s seguidores" % (perfil.get("seguidores")
+                                        if perfil.get("seguidores") is not None else "?")
+    return True, "perfil nao lido: %s" % (erro or {}).get("erro")
+
+
+def perfil_de_hoje(open_id):
+    """Lê o perfil e guarda na fotografia de hoje, num passo só. (ok, recado)
+
+    É o que `puxar_diario` e o botão "Ler agora" chamam logo depois de guardar
+    os vídeos. Uma falha aqui não pode custar o dia: a fotografia dos vídeos já
+    está no disco quando isto roda.
+    """
+    try:
+        ok, dados = puxar_perfil(open_id)
+        if ok:
+            return guardar_perfil(open_id, perfil=dados)
+        guardou, recado = guardar_perfil(open_id, erro=dados)
+        return False, recado if guardou else ("perfil nao lido: %s (e nao "
+                                                "gravou: %s)" % (dados.get("erro"), recado))
+    except Exception as e:
+        return False, "perfil nao lido: %s" % e
 
 
 def fotografia_de_hoje(open_id):
