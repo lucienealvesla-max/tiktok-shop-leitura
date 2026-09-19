@@ -337,7 +337,19 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
     dias_medidos = _dias_entre(desde, ate)
 
     por_id = {v.get("id"): v for v in videos if v.get("id")}
-    ganho_por_video = {}
+    try:
+        desde_dt = datetime.strptime(desde, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        desde_dt = inicio_dt
+    # DUAS PARCELAS, e só uma se projeta. `ganho_por_video` é o que foi
+    # MEDIDO entre leituras dentro da janela — é ritmo, e ritmo se projeta.
+    # `nascidas` são as views que um vídeo nascido na janela mas ANTES da
+    # primeira leitura já tinha quando apareceu: são desta janela, mas não
+    # aconteceram no intervalo medido, e projetá-las junto (bug achado na
+    # revisão de 19/09) inflava o número em centenas de milhares. Vídeo
+    # nascido DEPOIS da primeira leitura tem as views iniciais dentro do
+    # intervalo medido, e aí elas entram no ritmo.
+    ganho_por_video, nascidas = {}, 0.0
     for vid, pontos in serie.items():
         dentro = [p for p in pontos if (p[0] or "") >= inicio]
         if not dentro:
@@ -345,13 +357,16 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
         g = sum(gn for _d, gn, _r in _ganhos_diarios(dentro))
         v = por_id.get(vid) or {}
         nasceu = _quando(v.get("create_time"))
-        if nasceu and nasceu >= inicio_dt:
+        if nasceu and nasceu >= desde_dt:
             g += dentro[0][1]
+        elif nasceu and nasceu >= inicio_dt:
+            nascidas += dentro[0][1]
         ganho_por_video[vid] = g
 
-    ganho = sum(ganho_por_video.values())
+    ganho_medido = sum(ganho_por_video.values())
+    ganho = ganho_medido + nascidas
     projetado = dias_medidos < janela
-    views_30d = (ganho * janela / dias_medidos) if projetado else ganho
+    views_30d = ((ganho_medido * janela / dias_medidos) + nascidas) if projetado else ganho
 
     por_faixa = {}
     for vid, g in ganho_por_video.items():
@@ -389,14 +404,28 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
     de_loja = [v for v in publicados if _de_loja(v)]
     sem_loja = [v for v in publicados if not _de_loja(v)]
     elegiveis = [v for v in sem_loja if _n(v.get("duration")) > regras["duracao_s"]]
-    ganho_loja = sum(ganho_por_video.get(v.get("id"), 0) for v in videos if _de_loja(v))
-    ganho_sem_loja = round(ganho - ganho_loja)
+    # A MESMA BASE dos dois lados: o ganho medido, vídeo a vídeo, separado
+    # pelo que o catálogo diz de cada um. Vídeo que a série conhece e o
+    # catálogo não (catálogo indisponível, caindo na última fotografia) vai
+    # para "desconhecido" — nunca para "sem loja", que era o que inflava a
+    # elegibilidade quando o catálogo falhava.
+    ganho_loja = ganho_sem_loja = ganho_desconhecido = 0.0
+    for vid, g in ganho_por_video.items():
+        v = por_id.get(vid)
+        if v is None:
+            ganho_desconhecido += g
+        elif _de_loja(v):
+            ganho_loja += g
+        else:
+            ganho_sem_loja += g
 
     fora.update({
         "publicados_loja": len(de_loja), "publicados_sem_loja": len(sem_loja),
         "elegiveis_recompensa": len(elegiveis),
-        "views_ganhas_loja": round(ganho_loja), "views_ganhas_sem_loja": ganho_sem_loja,
-        "pct_views_loja": round(ganho_loja * 100.0 / ganho, 1) if ganho else None,
+        "views_ganhas_loja": round(ganho_loja), "views_ganhas_sem_loja": round(ganho_sem_loja),
+        "views_ganhas_desconhecido": round(ganho_desconhecido),
+        "pct_views_loja": (round(ganho_loja * 100.0 / ganho_medido, 1)
+                           if ganho_medido else None),
     })
 
     fora.update({

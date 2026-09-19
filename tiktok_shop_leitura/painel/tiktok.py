@@ -519,6 +519,25 @@ def gravar_na_pasta_de_dados(videos, pasta, perfil=None):
     return True, "gravei %d vídeo(s) em %s" % (len(videos), alvo.name)
 
 
+def _escrever_inteiro(alvo, dados):
+    """Grava um JSON por inteiro ou não grava: temporário e troca. (ok, erro)
+
+    A fotografia era escrita no lugar (`write_text`), duas vezes por leitura
+    (vídeos, depois perfil). Quem lesse no meio — o painel, consultado a cada
+    5 s durante o "Ler agora" — via um arquivo pela metade, `fotos()` o
+    pulava em silêncio, e o painel do dia saía sem hoje, gravado sob uma
+    chave válida (revisão de 19/09). Com a troca atômica o arquivo é sempre
+    o de antes ou o de depois; nunca o meio.
+    """
+    try:
+        temp = alvo.with_suffix(".json.novo.%d" % os.getpid())
+        temp.write_text(json.dumps(dados), encoding="utf-8")
+        temp.replace(alvo)
+        return True, None
+    except OSError as e:
+        return False, str(e)
+
+
 def guardar_foto(open_id, videos):
     """Grava a leitura de hoje, crua. (ok, mensagem)
 
@@ -581,10 +600,9 @@ def guardar_foto(open_id, videos):
     for chave in ("perfil", "perfil_erro"):
         if antes.get(chave) is not None:
             registro[chave] = antes[chave]
-    try:
-        alvo.write_text(json.dumps(registro), encoding="utf-8")
-    except OSError as e:
-        return False, str(e)
+    ok_esc, erro_esc = _escrever_inteiro(alvo, registro)
+    if not ok_esc:
+        return False, erro_esc
 
     # O CATALOGO, logo depois da fotografia e nunca antes: a fotografia é a
     # única coisa insubstituível aqui, e um erro no catálogo não pode custar o
@@ -664,10 +682,9 @@ def guardar_perfil(open_id, perfil=None, erro=None):
         d.pop("perfil_erro", None)
     else:
         d["perfil_erro"] = erro or {"erro": "sem motivo"}
-    try:
-        alvo.write_text(json.dumps(d), encoding="utf-8")
-    except OSError as e:
-        return False, str(e)
+    ok_esc, erro_esc = _escrever_inteiro(alvo, d)
+    if not ok_esc:
+        return False, erro_esc
     if perfil:
         return True, "%s seguidores" % (perfil.get("seguidores")
                                         if perfil.get("seguidores") is not None else "?")

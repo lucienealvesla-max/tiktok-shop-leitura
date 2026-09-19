@@ -303,7 +303,9 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
         # GRAVE MAIS LONGO vale pela AUDIÊNCIA, não pelo programa: vídeo de
         # loja não ganha recompensa de jeito nenhum, mas o longo ganha 5 a 7x
         # mais views novas — e views em vídeo de loja viram clique e comissão.
-        if pct is not None and pct < 50 and m.get("longo_vs_curto"):
+        # `> 1`, e não só "existe": com 0,6x a linha antiga mandava gravar
+        # mais longo citando o número que provava o contrário (revisão 19/09).
+        if pct is not None and pct < 50 and (m.get("longo_vs_curto") or 0) > 1:
             linhas.append({
                 "acao": "GRAVE MAIS LONGO",
                 "texto": "Só %s%% dos %d vídeos dos últimos %d dias passam de 1 minuto, e "

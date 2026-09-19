@@ -68,17 +68,41 @@ def _mtime(p):
         return "-"
 
 
+def _assinatura_das_vendas():
+    """Nome e hora de cada CSV em vendas/ e de cada resposta crua em vendas/api/.
+    Um arquivo novo ou reescrito muda a chave — sem isto, um CSV colocado na
+    pasta só aparecia na tela na leitura seguinte (revisão de 19/09)."""
+    import os as _os
+    base = Path(_os.environ.get("TIKTOK_SHOP_DADOS") or PASTA) / "vendas"
+    partes = []
+    for p in sorted(base.glob("*.csv")) + sorted((base / "api").glob("*.json")):
+        partes.append("%s:%s" % (p.name, _mtime(p)))
+    return ",".join(partes) or "-"
+
+
 def chave(tk, escolhida):
-    """De que dados o cálculo saiu. Muda → o arquivo gravado não vale mais."""
+    """De que dados o cálculo saiu. Muda → o arquivo gravado não vale mais.
+
+    Entram: a versão, as fotografias, o catálogo, os arquivos de vendas, a
+    meta do mês e O DIA DE HOJE. O dia entra (revisão de 19/09) porque o
+    painel guarda idades em dias: sem a data na chave, uma leitura que
+    falhasse três noites seguidas deixaria "13 dias" congelado na tela por
+    três dias. Custa um cálculo de 4 s por dia; antes custava a verdade.
+    """
+    import os as _os
+    from datetime import datetime as _dt
     pasta = tk.pasta_da_conta(escolhida)
     fotos = sorted((pasta / "fotos").glob("*.json")) if (pasta / "fotos").is_dir() else []
     ultima = fotos[-1] if fotos else None
     return "|".join([
         _versao(),
+        _dt.now().strftime("%Y-%m-%d"),
         str(len(fotos)),
         ultima.name if ultima else "-",
         _mtime(ultima) if ultima else "-",
         _mtime(pasta / "catalogo.json"),
+        _assinatura_das_vendas(),
+        "meta=" + str(_os.environ.get("TIKTOK_SHOP_META") or "0"),
     ])
 
 
@@ -100,12 +124,44 @@ def ler(tk, escolhida):
 def _gravar(tk, escolhida, chave_, painel):
     alvo = _caminho(tk, escolhida)
     # Arquivo temporário e troca, como o catálogo: uma queda no meio da escrita
-    # não pode deixar um JSON pela metade para a tela engasgar.
-    temp = alvo.with_suffix(".json.novo")
+    # não pode deixar um JSON pela metade para a tela engasgar. O pid no nome
+    # do temporário existe porque relógio e servidor são DOIS processos.
+    import os as _os
+    temp = alvo.with_suffix(".json.novo.%d" % _os.getpid())
     temp.write_text(json.dumps({"chave": chave_, "gravado_em": int(time.time()),
                                 "painel": painel}, ensure_ascii=False),
                     encoding="utf-8")
     temp.replace(alvo)
+
+
+class _TravaDeArquivo(object):
+    """Trava ENTRE PROCESSOS, por conta. O relógio e o servidor são dois
+    python3 (run.sh), e o threading.Lock só vale dentro de um: no arranque os
+    dois calculavam o mesmo painel em dobro e disputavam o mesmo temporário
+    (revisão de 19/09). fcntl.flock no arquivo `<conta>/desempenho.lock`
+    faz o segundo esperar o primeiro e encontrar o arquivo pronto."""
+
+    def __init__(self, caminho):
+        self.caminho = caminho
+        self.f = None
+
+    def __enter__(self):
+        try:
+            import fcntl
+            self.f = open(self.caminho, "a+")
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        except Exception:
+            self.f = None          # sem flock (Windows), segue com a trava de thread
+        return self
+
+    def __exit__(self, *a):
+        if self.f is not None:
+            try:
+                import fcntl
+                fcntl.flock(self.f, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            self.f.close()
 
 
 def preparar(tk, escolhida, motivo=""):
@@ -115,10 +171,20 @@ def preparar(tk, escolhida, motivo=""):
     e encontra o arquivo pronto. `motivo` vai para o log, para se saber quem
     pediu o cálculo — "depois da leitura da 1h", "ao abrir a tela".
     """
-    with _trava(escolhida):
+    pasta = tk.pasta_da_conta(escolhida)
+    with _trava(escolhida), _TravaDeArquivo(pasta / "desempenho.lock"):
         pronto = ler(tk, escolhida)
         if pronto is not None:
             return pronto
+        # O CATÁLOGO ANTES DA CHAVE: `calcular` reconstrói e grava o
+        # catálogo quando ele não existe, e a chave tirada antes disso
+        # carregava o mtime "-" e nunca batia — um cálculo a mais por conta
+        # nova (revisão de 19/09).
+        try:
+            import catalogo
+            catalogo.videos(pasta)
+        except Exception:
+            pass
         chave_ = chave(tk, escolhida)
         t0 = time.time()
         painel = metricas.calcular(tk, escolhida)
