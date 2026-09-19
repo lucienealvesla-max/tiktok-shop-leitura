@@ -7,6 +7,8 @@ mkdir -p "${TIKTOK_SHOP_DADOS}"
 # faltar (instalacao antiga que ainda nao gravou as opcoes), o proprio relogio
 # tem um padrao - variavel vazia nao pode virar "leitura as 0h" por acidente.
 export TIKTOK_SHOP_HORA="$(bashio::config 'hora_da_leitura')"
+# A meta mensal de comissao (fase 2). Vazia ou zero = sem meta.
+export TIKTOK_SHOP_META="$(bashio::config 'meta_mensal' 2>/dev/null || echo 0)"
 
 # A versao vem do arquivo ao lado do codigo: o build-arg do Supervisor nunca
 # chega (ver servidor_leitura._versao), e o log dizia "desconhecida" sempre.

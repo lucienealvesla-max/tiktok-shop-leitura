@@ -256,7 +256,7 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12, por_id=None):
 
 # ------------------------------------------------------------------- a pauta
 
-def pauta(largada_, refazer_, monet, quantos=8):
+def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
     """A lista do dia seguinte, em frases que ela pode executar.
 
     POR QUE EM FRASE, e não mais um gráfico: nenhum painel desta tela diz o que
@@ -326,6 +326,36 @@ def pauta(largada_, refazer_, monet, quantos=8):
                                  "Está dentro, mas sem folga." if m.get("views_ok")
                                  else "Está fora."),
                 "de_onde": "monetização: ganho de views desde %s" % m.get("desde"),
+            })
+
+    # DINHEIRO ANTES DE AUDIÊNCIA (fase 2). Quando há vendas, o vídeo que mais
+    # rendeu comissão nos últimos 30 dias e ainda vende é o primeiro conselho:
+    # empurrar o que já converte é mais barato que descobrir o que converte.
+    vd = vendas_ or {}
+    if vd.get("tem_dados"):
+        vive = [x for x in (vd.get("ainda_vende") or []) if (x.get("comissao") or 0) > 0]
+        top = vive[0] if vive else next(
+            (x for x in (vd.get("por_video") or []) if (x.get("comissao") or 0) > 0), None)
+        if top:
+            linhas.append({
+                "acao": "EMPURRE O QUE VENDE",
+                "link": top.get("link"), "capa": top.get("capa"),
+                "texto": '"%s" rendeu R$ %s de comissão em %d pedido(s) nos últimos 30 dias%s. '
+                         "Fixe o comentário com o link, responda quem pergunta preço, e grave "
+                         "outro corte do mesmo produto."
+                         % (top.get("titulo"), ("%.2f" % top["comissao"]).replace(".", ","),
+                            top.get("pedidos") or 0,
+                            (" (último pedido em %s)" % top["ultimo_pedido"]) if top.get("ultimo_pedido") else ""),
+                "de_onde": "vendas: %d vídeo(s) com pedido no período" % (vd.get("videos_com_venda") or 0),
+            })
+        sem = vd.get("sem_video") or {}
+        if (sem.get("pedidos") or 0) > 0 and not (vd.get("por_video") or []):
+            linhas.append({
+                "acao": "VENDAS SEM VÍDEO",
+                "texto": "Há %d pedido(s) no período que o painel não consegue ligar a nenhum "
+                         "vídeo: a fonte não traz id nem link do vídeo. Exporte da Central o "
+                         "relatório por vídeo, ou veja o log da API." % sem["pedidos"],
+                "de_onde": "vendas: fontes sem identificação de vídeo",
             })
 
     lg = largada_ or {}

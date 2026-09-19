@@ -82,6 +82,22 @@ def segundos_ate(agora, hora=HORA):
     return (proxima_leitura(agora, hora) - agora).total_seconds()
 
 
+def _vendas_do_dia():
+    """Os pedidos da Central de Afiliados, se estiver ligada. Nunca derruba.
+
+    Depois dos videos e antes do painel: a resposta crua vai para
+    vendas/api/ e o painel pronto ja sai com ela.
+    """
+    try:
+        import afiliado
+        if not afiliado.configurado():
+            return
+        ok, recado = afiliado.leitura_diaria()
+        print("vendas: %s" % recado)
+    except Exception as e:
+        print("vendas: a leitura quebrou: %s" % e)
+
+
 def _painel_pronto(motivo):
     """Deixa o painel calculado no disco, logo depois de ler.
 
@@ -111,6 +127,7 @@ def main():
             puxar_diario.main()
         except Exception as e:
             print("a leitura de recuperacao falhou: %s" % e)
+        _vendas_do_dia()
         _painel_pronto(" (depois da leitura de recuperacao)")
 
     while True:
@@ -133,6 +150,7 @@ def main():
             # UM DIA PERDIDO NÃO PODE DERRUBAR O RELÓGIO. Se o laço morrer,
             # perdem-se todos os dias seguintes em vez de um só.
             print("a leitura de hoje falhou: %s" % e)
+        _vendas_do_dia()
         _painel_pronto(" (depois da leitura das %dh)" % HORA)
 
 

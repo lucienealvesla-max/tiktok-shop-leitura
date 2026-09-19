@@ -193,6 +193,14 @@ def ler_todas():
         except Exception as e:
             linha["erro"] = str(e)
         perfis.append(linha)
+    # As vendas da Central, se ligada — depois dos videos, como no relogio.
+    try:
+        import afiliado
+        if afiliado.configurado():
+            _ok_v, recado_v = afiliado.leitura_diaria()
+            print("vendas: %s" % recado_v)
+    except Exception as e:
+        print("vendas: a leitura quebrou: %s" % e)
     # O PAINEL PRONTO ANTES DE A PAGINA RECARREGAR. A leitura acabou de
     # mudar as fotografias, entao o arquivo gravado nao vale mais; calcular
     # aqui (uns segundos, depois de minutos de leitura) e' o que faz o

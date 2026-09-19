@@ -39,6 +39,7 @@ DUAS REGRAS QUE VALEM PARA TUDO NESTE ARQUIVO:
    nada. Sem o piso, o ranking enche de ruído e aponta pro lugar errado.
 """
 
+import os
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -376,10 +377,152 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
 
 
 # =========================================================================
+#  VENDAS (fase 2): o que vendeu, o que rende, quanto deu no mês
+# =========================================================================
+
+def _casar_video(linha, por_id, por_url, por_titulo):
+    """O vídeo do catálogo por trás de uma linha de venda, ou None.
+
+    Por id quando houver (é o que a API dá, se der); senão pelo link, que a
+    Central exporta; senão pelo título exato. Título parecido NÃO casa: 92
+    vídeos dela começam com os mesmos 40 caracteres, e casar por prefixo
+    creditaria a venda ao vídeo errado com cara de certo.
+    """
+    vid = linha.get("video_id")
+    if vid and vid in por_id:
+        return por_id[vid]
+    url = (linha.get("video_url") or "").split("?")[0]
+    if url and url in por_url:
+        return por_url[url]
+    t = (linha.get("video_titulo") or "").strip()
+    if t and t in por_titulo:
+        return por_titulo[t]
+    return None
+
+
+def vendas(linhas, fontes, videos, hoje, meta_mensal=None, quantos=10):
+    """Os painéis de dinheiro. Só somam `pedidos`, `valor` e `comissao`;
+    nunca contam linhas (uma linha de CSV pode ser um agregado)."""
+    try:
+        hoje_dt = datetime.strptime(hoje, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        hoje_dt = datetime.now()
+        hoje = hoje_dt.strftime("%Y-%m-%d")
+    mes = hoje[:7]
+    d7 = (hoje_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+    d30 = (hoje_dt - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    def soma(ls, campo):
+        return round(sum((l.get(campo) or 0) for l in ls), 2)
+
+    fora = {"tem_dados": bool(linhas), "fontes": fontes, "meta_mensal": meta_mensal,
+            "mes": mes, "linhas": len(linhas)}
+    if not linhas:
+        return fora
+
+    no_mes = [l for l in linhas if (l.get("quando") or "").startswith(mes)]
+    em7 = [l for l in linhas if (l.get("quando") or "") >= d7]
+    em30 = [l for l in linhas if (l.get("quando") or "") >= d30]
+    fora["mes_comissao"] = soma(no_mes, "comissao")
+    fora["mes_pedidos"] = int(soma(no_mes, "pedidos"))
+    fora["mes_valor"] = soma(no_mes, "valor")
+    fora["d7_comissao"] = soma(em7, "comissao")
+    fora["d7_pedidos"] = int(soma(em7, "pedidos"))
+    fora["d30_comissao"] = soma(em30, "comissao")
+    fora["d30_pedidos"] = int(soma(em30, "pedidos"))
+    if meta_mensal:
+        fora["meta_pct"] = round(fora["mes_comissao"] * 100.0 / meta_mensal, 1)
+        # Ritmo: o que já deu dividido pelos dias corridos, vezes os dias do mês.
+        dias_corridos = max(1, hoje_dt.day)
+        import calendar
+        dias_do_mes = calendar.monthrange(hoje_dt.year, hoje_dt.month)[1]
+        fora["mes_projecao"] = round(fora["mes_comissao"] / dias_corridos * dias_do_mes, 2)
+
+    por_id = {v.get("id"): v for v in videos if v.get("id")}
+    por_url = {(v.get("share_url") or "").split("?")[0]: v for v in videos if v.get("share_url")}
+    por_titulo = {}
+    for v in videos:
+        t = (v.get("title") or "").strip()
+        if t:
+            por_titulo.setdefault(t, v)
+
+    # POR VÍDEO, nos últimos 30 dias.
+    agrupado, sem_video = {}, {"pedidos": 0, "comissao": 0.0, "linhas": 0}
+    for l in em30:
+        v = _casar_video(l, por_id, por_url, por_titulo)
+        if v is None:
+            sem_video["pedidos"] += l.get("pedidos") or 0
+            sem_video["comissao"] += l.get("comissao") or 0
+            sem_video["linhas"] += 1
+            continue
+        g = agrupado.setdefault(v.get("id"), {"video": v, "pedidos": 0, "comissao": 0.0,
+                                                 "valor": 0.0, "ultimo": None, "produtos": set()})
+        g["pedidos"] += l.get("pedidos") or 0
+        g["comissao"] += l.get("comissao") or 0
+        g["valor"] += l.get("valor") or 0
+        if l.get("quando") and (g["ultimo"] is None or l["quando"] > g["ultimo"]):
+            g["ultimo"] = l["quando"]
+        if l.get("produto"):
+            g["produtos"].add(str(l["produto"])[:40])
+    agora = datetime.now()
+    por_video = []
+    for vid, g in agrupado.items():
+        v = g["video"]
+        views = _n(v.get("view_count"))
+        nasceu = _quando(v.get("create_time"))
+        por_video.append(dict(_identidade(v), **{
+            "id": vid, "views": views,
+            "pedidos": int(g["pedidos"]), "comissao": round(g["comissao"], 2),
+            "valor": round(g["valor"], 2),
+            "pedidos_por_mil_views": round(g["pedidos"] * 1000.0 / views, 2) if views else None,
+            "ultimo_pedido": g["ultimo"],
+            "idade_dias": (agora - nasceu).days if nasceu else None,
+            "produtos": sorted(g["produtos"])[:3],
+        }))
+    por_video.sort(key=lambda x: (-(x["comissao"] or 0), -x["pedidos"]))
+    fora["por_video"] = por_video[:quantos]
+    fora["videos_com_venda"] = len(por_video)
+    fora["sem_video"] = dict(sem_video, comissao=round(sem_video["comissao"], 2))
+
+    # AINDA VENDE: vídeo com mais de 14 dias e pedido nos últimos 7.
+    fora["ainda_vende"] = [x for x in por_video
+                           if (x.get("idade_dias") or 0) > 14 and (x.get("ultimo_pedido") or "") >= d7][:quantos]
+
+    # POR PRODUTO, nos últimos 30 dias: comissão, pedidos, e comissão por
+    # mil views dos vídeos daquele produto (só quando há vínculo vídeo→produto).
+    prod = {}
+    for l in em30:
+        nome = str(l.get("produto") or l.get("produto_id") or "").strip()
+        if not nome:
+            continue
+        g = prod.setdefault(nome, {"produto": nome, "pedidos": 0, "comissao": 0.0,
+                                   "valor": 0.0, "videos": set()})
+        g["pedidos"] += l.get("pedidos") or 0
+        g["comissao"] += l.get("comissao") or 0
+        g["valor"] += l.get("valor") or 0
+        v = _casar_video(l, por_id, por_url, por_titulo)
+        if v is not None:
+            g["videos"].add(v.get("id"))
+    por_produto = []
+    for g in prod.values():
+        views = sum(_n((por_id.get(i) or {}).get("view_count")) for i in g["videos"])
+        por_produto.append({
+            "produto": g["produto"], "pedidos": int(g["pedidos"]),
+            "comissao": round(g["comissao"], 2), "valor": round(g["valor"], 2),
+            "videos": len(g["videos"]),
+            "comissao_por_pedido": round(g["comissao"] / g["pedidos"], 2) if g["pedidos"] else None,
+            "comissao_por_mil_views": round(g["comissao"] * 1000.0 / views, 2) if views else None,
+        })
+    por_produto.sort(key=lambda x: -(x["comissao"] or 0))
+    fora["por_produto"] = por_produto[:quantos]
+    return fora
+
+
+# =========================================================================
 #  TUDO, E DE ONDE A TELA LÊ
 # =========================================================================
 
-def tudo(fotos, videos=None):
+def tudo(fotos, videos=None, vendas_=None):
     """Todos os painéis numa chamada só.
 
     `videos` é o CATÁLOGO — todo vídeo que já foi visto, com o número mais
@@ -409,13 +552,19 @@ def tudo(fotos, videos=None):
     lg = conteudo.largada(fotos, por_id=por_id)
     rf = conteudo.refazer(videos)
     mn = monetizacao(fotos, videos, serie=serie)
+    # AS VENDAS (fase 2): `vendas_` é (linhas, fontes, meta_mensal) montado por
+    # `calcular`, que sabe onde os arquivos moram. Sem nada, o painel diz
+    # que não há Central conectada — e a pauta segue só com audiência.
+    linhas, fontes, meta = vendas_ or ([], [], None)
+    vd = vendas(linhas, fontes, videos, fotos[-1].get("dia") or "", meta_mensal=meta)
     return {
         "dias_de_historico": len(fotos),
         "videos": len(videos),
         # A ORDEM AQUI NÃO É A DA TELA (o dashboard.html decide), mas a pauta
         # vem primeiro por ser o único painel que sai dos outros.
-        "pauta": conteudo.pauta(lg, rf, mn),
+        "pauta": conteudo.pauta(lg, rf, mn, vd),
         "monetizacao": mn,
+        "vendas": vd,
         "largada": lg,
         "acelerando": acelerando(fotos, por_id=por_id, serie=serie),
         "ressurreicoes": ressurreicoes(fotos, por_id=por_id, serie=serie),
@@ -462,7 +611,25 @@ def calcular(tk, escolhida):
     except Exception:
         catalogados, cobertura = None, None
 
-    d = tudo(fotos, catalogados)
+    # As vendas: CSVs exportados à mão e/ou respostas cruas da API. Uma
+    # falha aqui não pode custar a tela inteira — vira "sem vendas".
+    vendas_ = None
+    try:
+        import vendas as _vendas
+        import afiliado as _afiliado
+        linhas, fontes = _vendas.todas()
+        meta = None
+        try:
+            meta = float(os.environ.get("TIKTOK_SHOP_META") or 0) or None
+        except ValueError:
+            meta = None
+        vendas_ = (linhas, fontes, meta)
+        estado_afiliado = _afiliado.estado()
+    except Exception as e:
+        estado_afiliado = {"erro": str(e)}
+
+    d = tudo(fotos, catalogados, vendas_)
+    d["vendas"]["central"] = estado_afiliado
     d["cobertura"] = cobertura
     d["tem_dados"] = True
     return d

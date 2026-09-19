@@ -186,8 +186,56 @@ avisa.
 compartilhou ou comentou muito acima do normal. Não são vídeos ruins: são vídeos
 bons que não foram entregues.
 
+**Vendas** (desde a 1.6.0) — comissão do mês contra a meta, o que vendeu **por
+vídeo** (com pedidos por mil views) e os produtos que rendem. É a régua que
+substitui "views" para quem vende. Veja a seção abaixo sobre de onde vêm os
+dados.
+
 **Parcerias e marcas** — qual parceria rende mais, em views. Comissão por marca
-entra quando a Central de Afiliados for ligada.
+entra quando a Central de Afiliados estiver ligada.
+
+## Vendas: de onde vêm, e o que ainda não está verificado
+
+A Display API do TikTok não tem pedido nenhum. Vendas moram na **Central de
+Afiliados do TikTok Shop**, que é outro app, outro portal (Partner Center) e
+outra autorização. Há dois caminhos, e os dois podem coexistir:
+
+**1. Export da Central (funciona hoje, sem aprovação nenhuma).** No app do
+TikTok, Central de Afiliados → Dados/Desempenho → relatório **por vídeo** →
+exportar. Ponha o `.csv` em `/share/tiktok-shop/vendas/`. O painel lê todos
+os CSVs dessa pasta, reconhece as colunas pelo nome (vídeo, link, produto,
+pedidos, GMV, comissão, data — em português ou inglês) e diz na tela **que
+colunas encontrou e quais faltaram**. Sem coluna de vídeo (id ou link), as
+vendas entram nos totais mas não na tabela por vídeo.
+
+**2. API de afiliado (pedido a pedido, todo dia).** Precisa de um app no
+Partner Center do TikTok Shop (`partner.tiktokshop.com`, separado do portal
+de desenvolvedor), com os escopos de *Affiliate Creator*, e da autorização
+da criadora com a conta de afiliada. Depois:
+
+```
+/share/tiktok-shop/afiliado.json
+  {"app_key": "...", "app_secret": "..."}
+```
+
+A autorização devolve um `code` no endereço de retorno do app; troque-o pelo
+token com `python3 /app/painel/afiliado.py conectar <code>` (de dentro do
+container do add-on). A partir daí a leitura da 1h também puxa os pedidos,
+guarda a **resposta crua** em `/share/tiktok-shop/vendas/api/AAAA-MM-DD.json`
+e o painel lê dali.
+
+O que está **verificado** neste caminho: a assinatura dos pedidos (testada
+contra a fixture da própria documentação do TikTok — `afiliado.py testar`),
+a origem da API, o cabeçalho do token, e a troca/renovação do token. O que
+**não está**: o corpo exato e os campos da resposta de
+`/affiliate_creator/202405/orders/search`, e se o pedido traz o id do vídeo
+que vendeu. Por isso a resposta é guardada crua antes de qualquer
+interpretação, e o log da primeira leitura lista os campos que vieram — se a
+adivinhação de nomes estiver errada, ajusta-se `vendas.py` sem perder um dia.
+
+**Meta do mês:** a opção `meta_mensal` (aba Configuração do add-on), em
+reais. Com ela, o cartão de vendas diz quanto já deu, que percentual é, e em
+quanto fecha o mês no ritmo atual.
 
 Toda comparação diz de quantos vídeos saiu, e nenhuma usa média — um viral
 distorce qualquer média, e a mediana descreve o dia normal.

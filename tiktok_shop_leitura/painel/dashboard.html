@@ -312,6 +312,107 @@ function painelMonetizacao(m){
   return h + '</div>';
 }
 
+/* VENDAS (fase 2). Tres estados: sem Central e sem CSV (diz como ligar);
+   fonte presente mas sem linha util (diz o que faltou no arquivo); dados
+   (comissao do mes, o que vendeu por video, produtos que rendem). */
+function reais(x){
+  if(x === null || x === undefined) return "—";
+  return "R$ " + n(x, 2);
+}
+function painelVendas(v){
+  var h = '<h2>Vendas</h2>';
+  v = v || {};
+  var c = v.central || {};
+  var fontes = v.fontes || [];
+  if(!v.tem_dados){
+    var como = '';
+    if(!c.configurado){
+      como = 'Duas maneiras de trazer as vendas para cá, e as duas podem coexistir:<ol>' +
+        '<li><b>Export da Central de Afiliados</b> (funciona hoje, sem aprovação): no app do ' +
+        'TikTok, Central de Afiliados → Dados/Desempenho → relatório <b>por vídeo</b> → exportar. ' +
+        'Ponha o arquivo <code>.csv</code> em <code>/share/tiktok-shop/vendas/</code>. A tela lê ' +
+        'sozinha e diz que colunas encontrou.</li>' +
+        '<li><b>API de afiliado</b> (pedido a pedido, todo dia): app no Partner Center do TikTok ' +
+        'Shop, <code>app_key</code> e <code>app_secret</code> em ' +
+        '<code>/share/tiktok-shop/afiliado.json</code>, e a autorização da criadora. ' +
+        'Detalhes na documentação do add-on.</li></ol>';
+    } else if(!c.conectado){
+      como = 'A Central está configurada mas <b>não autorizada</b>: falta a criadora autorizar o ' +
+        'app e o código de retorno ser trocado pelo token (<code>afiliado.py conectar</code>).';
+    } else {
+      como = 'Central autorizada' + (c.ultima_leitura ? ', última leitura em ' + esc(c.ultima_leitura) : ', ainda sem leitura') +
+        (c.ultimo_erro ? '. Último erro: <b>' + esc(c.ultimo_erro) + '</b>' : '') +
+        '. Sem pedido no período ainda.';
+    }
+    var lidos = fontes.map(function(f){
+      return '<li><code>' + esc(f.arquivo) + '</code>: ' + n(f.linhas) + ' linha(s)' +
+        ((f.faltam || []).length ? ' — <b>sem</b> ' + f.faltam.map(esc).join(', ') : '') +
+        (f.erro ? ' — ' + esc(f.erro) : '') + '</li>';
+    }).join('');
+    return h + '<div class="cartao"><div class="sub">O que a tela mede até aqui é <b>audiência</b>. ' +
+      'Para quem vende, view é só pista: um vídeo de 300 views que vendeu 8 unidades vale mais que ' +
+      'um de 50 mil que não vendeu. ' + como + '</div>' +
+      (lidos ? '<div class="sub" style="margin-top:10px">Fontes lidas:<ul>' + lidos + '</ul></div>' : '') +
+      '</div>';
+  }
+  var meta = v.meta_mensal
+    ? ' · meta ' + reais(v.meta_mensal) + ' (<b>' + n(v.meta_pct, 0) + '%</b>' +
+      (v.mes_projecao != null ? ', no ritmo fecha em ' + reais(v.mes_projecao) : '') + ')'
+    : ' · defina <code>meta_mensal</code> na configuração do add-on para ver quanto falta';
+  h += '<div class="cartao">' +
+    '<div class="kpis">' +
+      '<div class="kpi ok"><div class="numerao">' + reais(v.mes_comissao) + '</div>' +
+        '<div class="rotulo">comissão em ' + esc(v.mes) + '</div>' +
+        '<div class="sub">' + n(v.mes_pedidos) + ' pedido(s) · ' + reais(v.mes_valor) + ' vendidos' + meta + '</div></div>' +
+      '<div class="kpi"><div class="numerao">' + reais(v.d7_comissao) + '</div>' +
+        '<div class="rotulo">últimos 7 dias</div><div class="sub">' + n(v.d7_pedidos) + ' pedido(s)</div></div>' +
+      '<div class="kpi"><div class="numerao">' + reais(v.d30_comissao) + '</div>' +
+        '<div class="rotulo">últimos 30 dias</div><div class="sub">' + n(v.d30_pedidos) + ' pedido(s)</div></div>' +
+    '</div>';
+  var pv = v.por_video || [];
+  if(pv.length){
+    h += '<div class="rotulo" style="margin-top:14px">O que vendeu, por vídeo (30 dias)</div>' +
+      '<div class="sub">Comissão e pedidos ligados ao vídeo que os gerou. É a régua que substitui ' +
+      '"views": o vídeo certo é o que converte.</div>' +
+      '<table><tr><th>Vídeo</th><th class="n">Comissão</th><th class="n">Pedidos</th>' +
+      '<th class="n">Views</th><th class="n">Ped./mil views</th><th class="n">Último</th></tr>' +
+      pv.map(function(x){
+        return '<tr><td>' + videoNome(x, true) +
+          (x.produtos && x.produtos.length ? '<span class="quando">' + x.produtos.map(esc).join(' · ') + '</span>' : '') +
+          '</td><td class="n bom">' + reais(x.comissao) + '</td>' +
+          '<td class="n">' + n(x.pedidos) + '</td><td class="n">' + n(x.views) + '</td>' +
+          '<td class="n">' + (x.pedidos_por_mil_views == null ? '—' : n(x.pedidos_por_mil_views, 2)) + '</td>' +
+          '<td class="n">' + esc(x.ultimo_pedido || '—') + '</td></tr>';
+      }).join('') + '</table>';
+  }
+  var sv = v.sem_video || {};
+  if(sv.pedidos){
+    h += '<div class="aviso' + (pv.length ? '' : ' ruim') + '"><b>' + n(sv.pedidos) + ' pedido(s) (' +
+      reais(sv.comissao) + ') sem vídeo identificado.</b> A fonte não trouxe id nem link do vídeo; ' +
+      'esses entram nos totais, mas não na tabela por vídeo.</div>';
+  }
+  var pp = v.por_produto || [];
+  if(pp.length){
+    h += '<div class="rotulo" style="margin-top:14px">Produtos que rendem (30 dias)</div>' +
+      '<table><tr><th>Produto</th><th class="n">Comissão</th><th class="n">Pedidos</th>' +
+      '<th class="n">Por pedido</th><th class="n">Por mil views</th><th class="n">Vídeos</th></tr>' +
+      pp.map(function(x){
+        return '<tr><td>' + esc(x.produto) + '</td><td class="n bom">' + reais(x.comissao) + '</td>' +
+          '<td class="n">' + n(x.pedidos) + '</td>' +
+          '<td class="n">' + reais(x.comissao_por_pedido) + '</td>' +
+          '<td class="n">' + (x.comissao_por_mil_views == null ? '—' : reais(x.comissao_por_mil_views)) + '</td>' +
+          '<td class="n">' + n(x.videos) + '</td></tr>';
+      }).join('') + '</table>' +
+      '<div class="sub">"Por mil views" só aparece quando a fonte liga a venda ao vídeo — é a ' +
+      'medida para decidir o que gravar de novo.</div>';
+  }
+  var lidas = fontes.map(function(f){
+    return esc(f.arquivo) + ' (' + n(f.linhas) + ((f.faltam || []).length ? ', sem ' + f.faltam.map(esc).join('/') : '') + ')';
+  }).join(' · ');
+  if(lidas) h += '<div class="sub" style="margin-top:10px">Fontes: ' + lidas + '</div>';
+  return h + '</div>';
+}
+
 /* QUAL PERFIL ESTA NA TELA. Ela tem mais de um, e o que funciona num publico
    nao funciona no outro - somar esconderia justamente o que ela precisa ver.
    A escolha fica no navegador, entao recarregar nao volta pro primeiro. */
@@ -468,6 +569,7 @@ function desenhar(d){
   h += blocoCobertura(d.cobertura);
   h += blocoEstado(d, tk);
   h += painelPauta(d.pauta);
+  h += painelVendas(d.vendas);
   h += painelMonetizacao(d.monetizacao);
 
   /* ---------- largada: as primeiras horas ---------- */

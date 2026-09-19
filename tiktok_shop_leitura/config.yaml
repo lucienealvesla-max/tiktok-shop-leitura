@@ -1,5 +1,5 @@
 name: Leitura TikTok Shop
-version: "1.5.1"
+version: "1.6.0"
 slug: tiktok_shop_leitura
 # Link que aparece na pagina do add-on, no Home Assistant.
 url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
@@ -21,10 +21,15 @@ map:
 # nao as 21h de antes, porque os dados dela desmentiram o palpite: ela publica
 # ate 23h56, e a leitura das 21h fechava o dia com uma a tres publicacoes ainda
 # por vir. A 1h da manha o dia anterior esta inteiro e ela nao esta postando.
+# A META DE COMISSAO DO MES, em reais (fase 2). Zero = sem meta. E o numero
+# que a tela mostra no topo das vendas: quanto ja deu, quanto falta, e em
+# quanto fecha no ritmo atual.
 options:
   hora_da_leitura: 1
+  meta_mensal: 0
 schema:
   hora_da_leitura: int(0,23)
+  meta_mensal: float(0,)
 
 # Se o processo morrer, o HA sobe de novo: um relogio parado nao avisa que
 # parou, e cada dia sem leitura e um buraco.
