@@ -452,6 +452,7 @@ function blocoEstado(d, tk){
 
 function desenhar(d){
   var tk = d.tiktok || {};
+  leituraManualAtual = tk.leitura_manual || null;
   if(!d.tem_dados){
     $("tudo").innerHTML = '<h2>Conexão com o TikTok</h2>' +
       blocoPerfis(tk) + blocoConexao(tk);
@@ -609,40 +610,68 @@ function ligarDiario(){
   });
 }
 
+/* A LEITURA MANUAL ACONTECE NO SERVIDOR, E A TELA SO ACOMPANHA. Ate a 1.5.0
+   o POST ficava aberto os ~3 minutos da leitura, e o proxy do Ingress do HA
+   desistia antes: devolvia a PROPRIA pagina de erro em HTML, a tela dizia
+   "Unexpected token '<'", e a leitura - que tinha terminado bem no servidor -
+   parecia ter falhado. Agora o POST so INICIA a leitura e responde na hora;
+   o andamento vem em `tiktok.leitura_manual` do /api/desempenho, que a tela
+   consulta a cada 5 s ate terminar. Fechar a pagina no meio nao perde nada. */
+function acompanharLeitura(bt, t0){
+  var relogio = setInterval(function(){
+    var s = Math.round((Date.now() - t0) / 1000);
+    $("puxar-recado").textContent = " lendo a conta inteira… " +
+      (s < 60 ? s + "s" : Math.floor(s / 60) + "min" + (s % 60) + "s") +
+      " (costuma levar uns 3 minutos; pode fechar a página, a leitura continua)";
+  }, 1000);
+  var olhar = setInterval(function(){
+    fetch("api/desempenho?conta=" + encodeURIComponent(contaEscolhida), {cache: "no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var lm = ((d || {}).tiktok || {}).leitura_manual || {};
+        if(lm.em_curso) return;
+        clearInterval(relogio); clearInterval(olhar);
+        $("puxar-recado").textContent = (lm.ok ? " pronto" : " não deu") +
+          (lm.recado ? " — " + lm.recado : "") + (lm.ok ? ", recarregando…" : "");
+        if(lm.ok) setTimeout(function(){ location.reload(); }, 1500);
+        else if(bt) bt.disabled = false;
+      })
+      .catch(function(){ /* proxy engasgou; a proxima volta tenta de novo */ });
+  }, 5000);
+}
+
 function ligarPuxar(){
   var bt = $("puxar");
   if(!bt) return;
+  /* Se a leitura ja esta rodando (outra aba, ou a pagina foi recarregada no
+     meio), o botao ja aparece ocupado e a tela so acompanha. */
+  var lm = leituraManualAtual || {};
+  if(lm.em_curso){
+    bt.disabled = true;
+    acompanharLeitura(bt, lm.iniciada_em ? lm.iniciada_em * 1000 : Date.now());
+  }
   bt.onclick = function(){
     bt.disabled = true;
-    /* Le a conta INTEIRA (2.327 videos dela levaram ~3 min). Sem este aviso a
-       tela parece travada e ela recarrega a pagina no meio - perdendo a leitura
-       e, com ela, o dia na serie. O contador existe pra dar sinal de vida. */
     var t0 = Date.now();
-    var relogio = setInterval(function(){
-      var s = Math.round((Date.now() - t0) / 1000);
-      $("puxar-recado").textContent = " lendo a conta inteira… " +
-        (s < 60 ? s + "s" : Math.floor(s / 60) + "min" + (s % 60) + "s") +
-        " (costuma levar uns 3 minutos — não feche a página)";
-    }, 1000);
     fetch("api/tiktok/puxar", {method: "POST"})
       .then(function(r){ return r.json(); })
       .then(function(res){
-        /* Um perfil pode falhar e os outros darem certo. Mostrar o recado de
-           cada um evita ela achar que leu tudo quando leu metade. */
-        clearInterval(relogio);
-        $("puxar-recado").textContent = (res.ok ? " pronto" : " não deu") +
-          (res.recado ? " — " + res.recado : (res.ok ? ", recarregando…" : ": " +
-           (res.erro || "erro")));
-        if(res.ok) setTimeout(function(){ location.reload(); }, 1000);
-        else bt.disabled = false;
+        if(!res.ok){
+          $("puxar-recado").textContent = " não deu: " + (res.erro || "erro");
+          bt.disabled = false;
+          return;
+        }
+        acompanharLeitura(bt, t0);
       })
-      .catch(function(e){
-        clearInterval(relogio);
-        $("puxar-recado").textContent = " não deu: " + (e.message || e);
-        bt.disabled = false;
+      .catch(function(){
+        /* Mesmo o POST de inicio pode voltar em HTML se o proxy estiver de mau
+           humor; o servidor provavelmente comecou. Acompanhar resolve os dois
+           casos: se nao comecou, `em_curso` vem falso e o botao volta. */
+        acompanharLeitura(bt, t0);
       });
   };
 }
+var leituraManualAtual = null;
 
 /* Uma funcao, e nao a chamada solta, porque o seletor de perfil recarrega os
    dados sem recarregar a pagina - recarregar perderia a posicao da rolagem e

@@ -8,7 +8,10 @@ mkdir -p "${TIKTOK_SHOP_DADOS}"
 # tem um padrao - variavel vazia nao pode virar "leitura as 0h" por acidente.
 export TIKTOK_SHOP_HORA="$(bashio::config 'hora_da_leitura')"
 
-bashio::log.info "Leitura TikTok Shop - versao ${TIKTOK_SHOP_VERSAO}"
+# A versao vem do arquivo ao lado do codigo: o build-arg do Supervisor nunca
+# chega (ver servidor_leitura._versao), e o log dizia "desconhecida" sempre.
+VERSAO_REAL="$(cat /app/painel/VERSAO 2>/dev/null || echo "${TIKTOK_SHOP_VERSAO}")"
+bashio::log.info "Leitura TikTok Shop - versao ${VERSAO_REAL}"
 bashio::log.info "leitura automatica todo dia as ${TIKTOK_SHOP_HORA}h"
 bashio::log.info "dados em ${TIKTOK_SHOP_DADOS}"
 

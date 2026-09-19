@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -95,13 +96,116 @@ def estado_daqui():
     import relogio_leitura
     base = {"dono_da_leitura": True, "leitura_em": None, "versao": VERSAO,
             "leitura_diaria": True, "agendador": False,
-            "hora_da_leitura": relogio_leitura.HORA}
+            "hora_da_leitura": relogio_leitura.HORA,
+            "leitura_manual": leitura_manual_estado()}
     try:
         base.update(tiktok.estado())
     except Exception:
         pass
     base["dono_da_leitura"] = True     # nunca sobrescrito pelo estado do módulo
     return base
+
+
+# =========================================================================
+#  A LEITURA MANUAL ("Ler agora") RODA EM SEGUNDO PLANO
+# =========================================================================
+# Ate a 1.5.0 o POST ficava aberto os ~3 minutos da leitura. O proxy do
+# Ingress do Home Assistant desiste antes disso e devolve a PROPRIA pagina de
+# erro, em HTML: a tela dizia "Unexpected token '<'" e parecia que a leitura
+# tinha falhado - quando no servidor ela tinha terminado bem (19/09/2026,
+# leitura 2 do dia gravada, painel pronto, POST 200 no log). Agora o POST
+# inicia a leitura numa thread e responde na hora; a tela acompanha pelo
+# estado abaixo, que vai dentro de `tiktok.leitura_manual` no /api/desempenho.
+# Uma leitura de cada vez: o segundo clique enquanto a primeira roda so diz
+# "ja esta lendo".
+
+_leitura_manual = {"em_curso": False, "iniciada_em": None, "terminada_em": None,
+                   "ok": None, "recado": None}
+_trava_da_leitura = threading.Lock()
+
+
+def leitura_manual_estado():
+    with _trava_da_leitura:
+        return dict(_leitura_manual)
+
+
+def iniciar_leitura_manual():
+    """Dispara a leitura em segundo plano. (ok, recado). Nunca levanta."""
+    with _trava_da_leitura:
+        if _leitura_manual["em_curso"]:
+            return True, "já está lendo"
+        _leitura_manual.update({"em_curso": True, "iniciada_em": int(time.time()),
+                                "terminada_em": None, "ok": None, "recado": None})
+
+    def _rodar():
+        try:
+            r = ler_todas()
+        except Exception as e:
+            r = {"ok": False, "recado": "a leitura quebrou: %s" % e}
+        with _trava_da_leitura:
+            _leitura_manual.update({"em_curso": False, "terminada_em": int(time.time()),
+                                    "ok": bool(r.get("ok")), "recado": r.get("recado")})
+        print("leitura manual terminou: %s" % (r.get("recado") or r.get("erro")))
+
+    threading.Thread(target=_rodar, daemon=True).start()
+    return True, "leitura iniciada"
+
+
+def ler_todas():
+    """LÊ TODOS OS PERFIS, não só o que está na tela.
+
+    A fotografia é a única coisa daqui que não se recupera: se a leitura
+    seguisse o seletor, o perfil que ela não estivesse olhando perderia o
+    dia — calado, e sem volta. Um perfil que falha não impede os outros.
+    """
+    # configurado() e contas() no MESMO try: os dois falam com o disco, e
+    # este servidor fica atrás de um túnel para a internet — nenhum dos
+    # dois pode escapar como exceção crua, só como JSON de erro.
+    try:
+        if not tiktok.configurado():
+            return {"ok": False, "recado": "conexão com o TikTok não configurada"}
+        contas = tiktok.contas()
+    except Exception as e:
+        return {"ok": False, "recado": str(e)}
+    perfis, algum = [], False
+    for conta in contas:
+        linha = {"conta": conta["open_id"], "nome": conta["nome"]}
+        try:
+            ok, d = tiktok.puxar_videos(conta["open_id"])
+            videos = (d or {}).get("videos") or []
+            if not videos:
+                linha["erro"] = tiktok.motivo_de_lista_vazia(d)
+            else:
+                guardou, recado = tiktok.guardar_foto(conta["open_id"], videos)
+                # LEITURA PELA METADE TEM QUE APARECER NA TELA. Foi este o
+                # buraco de 06/09/2026: a leitura trouxe 958 dos 2.352
+                # vídeos, o botão disse "pronto", e só três dias depois
+                # alguém reparou que o vídeo de 2,1 milhão tinha sumido.
+                if (d or {}).get("parcial"):
+                    recado += " — VEIO PELA METADE: " + str(
+                        d.get("motivo") or d.get("erro") or "sem motivo")
+                # Os seguidores do dia, depois dos videos (ver puxar_diario).
+                if guardou:
+                    _ok_p, recado_p = tiktok.perfil_de_hoje(conta["open_id"])
+                    recado += " · " + recado_p
+                linha["recado"] = recado
+                algum = algum or guardou
+        except Exception as e:
+            linha["erro"] = str(e)
+        perfis.append(linha)
+    # O PAINEL PRONTO ANTES DE A PAGINA RECARREGAR. A leitura acabou de
+    # mudar as fotografias, entao o arquivo gravado nao vale mais; calcular
+    # aqui (uns segundos, depois de minutos de leitura) e' o que faz o
+    # reload seguinte abrir na hora em vez de travar.
+    if algum:
+        try:
+            pronto.preparar_todas(tiktok, " (depois de Ler agora)")
+        except Exception as e:
+            print("painel nao ficou pronto depois da leitura: %s" % e)
+    return {"ok": algum, "perfis": perfis,
+            "recado": "; ".join(
+                "%s: %s" % (p["nome"], p.get("recado") or p.get("erro"))
+                for p in perfis)}
 
 
 class Alca(BaseHTTPRequestHandler):
@@ -143,7 +247,10 @@ class Alca(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.caminho() != "/api/tiktok/puxar":
             return self.json({"erro": "nao existe esse endereco"}, 404)
-        return self.json(self.ler_agora())
+        # RESPONDE NA HORA; a leitura segue em segundo plano (ver acima).
+        ok, recado = iniciar_leitura_manual()
+        return self.json({"ok": ok, "recado": recado,
+                          "leitura_manual": leitura_manual_estado()})
 
     def pagina(self):
         try:
@@ -155,64 +262,6 @@ class Alca(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
-
-    def ler_agora(self):
-        """LÊ TODOS OS PERFIS, não só o que está na tela.
-
-        A fotografia é a única coisa daqui que não se recupera: se a leitura
-        seguisse o seletor, o perfil que ela não estivesse olhando perderia o
-        dia — calado, e sem volta. Um perfil que falha não impede os outros.
-        """
-        # configurado() e contas() no MESMO try: os dois falam com o disco, e
-        # este servidor fica atrás de um túnel para a internet — nenhum dos
-        # dois pode escapar como exceção crua, só como JSON de erro.
-        try:
-            if not tiktok.configurado():
-                return {"ok": False, "erro": "conexão com o TikTok não configurada"}
-            contas = tiktok.contas()
-        except Exception as e:
-            return {"ok": False, "erro": str(e)}
-        perfis, algum = [], False
-        for conta in contas:
-            linha = {"conta": conta["open_id"], "nome": conta["nome"]}
-            try:
-                ok, d = tiktok.puxar_videos(conta["open_id"])
-                videos = (d or {}).get("videos") or []
-                if not videos:
-                    linha["erro"] = tiktok.motivo_de_lista_vazia(d)
-                else:
-                    guardou, recado = tiktok.guardar_foto(
-                        conta["open_id"], videos)
-                    # LEITURA PELA METADE TEM QUE APARECER NA TELA. Foi este o
-                    # buraco de 06/09/2026: a leitura trouxe 958 dos 2.352
-                    # vídeos, o botão disse "pronto", e só três dias depois
-                    # alguém reparou que o vídeo de 2,1 milhão tinha sumido.
-                    if (d or {}).get("parcial"):
-                        recado += " — VEIO PELA METADE: " + str(
-                            d.get("motivo") or d.get("erro") or "sem motivo")
-                    # Os seguidores do dia, depois dos videos (ver puxar_diario).
-                    if guardou:
-                        _ok_p, recado_p = tiktok.perfil_de_hoje(conta["open_id"])
-                        recado += " · " + recado_p
-                    linha["recado"] = recado
-                    algum = algum or guardou
-            except Exception as e:
-                linha["erro"] = str(e)
-            perfis.append(linha)
-        # O PAINEL PRONTO ANTES DE A PAGINA RECARREGAR. A leitura acabou de
-        # mudar as fotografias, entao o arquivo gravado nao vale mais; calcular
-        # aqui (uns segundos, depois de minutos de leitura) e' o que faz o
-        # reload seguinte abrir na hora em vez de travar.
-        if algum:
-            try:
-                pronto.preparar_todas(tiktok, " (depois de Ler agora)")
-            except Exception as e:
-                print("painel nao ficou pronto depois da leitura: %s" % e)
-        return {"ok": algum, "perfis": perfis,
-                "recado": "; ".join(
-                    "%s: %s" % (p["nome"], p.get("recado") or p.get("erro"))
-                    for p in perfis)}
-
 
 def Servidor(porta=8099):
     """Porta 0 pede uma livre ao sistema — é como o teste sobe sem brigar com
