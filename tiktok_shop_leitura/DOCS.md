@@ -100,54 +100,79 @@ Duas coisas mudaram por causa disso:
   explicação — mas o log agora registra em qual página ela recusou.
 - **O add-on não esquece.** Um arquivo `catalogo.json` por perfil guarda o
   último número conhecido de **todo vídeo que já apareceu em alguma leitura**.
-  Os painéis de retrato (mediana, assuntos, horário, duração) saem dele.
+  Os painéis de retrato (vale refazer, parcerias, quantos vídeos passam de 1
+  minuto) saem dele.
 
 O que você vê na tela quando a leitura veio incompleta: um aviso em vermelho
 dizendo quantos vídeos vieram dos que o painel conhece. **Nada é perdido** — o
 que muda é a atualidade: vídeo que não veio hoje aparece com o número do dia em
 que veio pela última vez.
 
-Os painéis de trajetória — *Acelerando*, *Ressuscitou*, *Largada*, *Meia-vida* —
-continuam saindo só de leitura de verdade, nunca do catálogo. Misturar o número
-de anteontem ali inventaria ganho que não houve.
+Os painéis de trajetória — *Acelerando*, *Ressuscitou*, *Largada* e o ganho de
+views da *Monetização* — continuam saindo só de leitura de verdade, nunca do
+catálogo. Misturar o número de anteontem ali inventaria ganho que não houve.
 
 O catálogo se reconstrói sozinho das fotografias, então apagá-lo não perde nada.
 
+## A tela abre em menos de um segundo
+
+Até a 1.3.2 abrir a tela levava **44 segundos** no Raspberry: cada abertura
+recalculava 21 painéis sobre 2.430 vídeos × 15 leituras, e o navegador
+desistia antes de o servidor terminar. Desde a 1.4.0 o painel é **calculado
+uma vez, logo depois da leitura da 1h**, e gravado em
+`<pasta da conta>/desempenho.json`; a tela lê o arquivo. Ele se refaz sozinho
+quando os dados mudam (leitura nova, "Ler agora", versão nova do add-on) e
+pode ser apagado a qualquer momento — nasce de novo das fotografias.
+
+A linha de estado no topo diz **quando** o painel foi calculado e quanto levou.
+Se você ler agora e a tela não mudar, é ali que se confere.
+
 ## O que a tela responde
 
-Metade dos painéis diz **o que aconteceu**; a outra metade diz **o que gravar**.
+Foram 21 painéis; ficaram **8**, com um critério só: o painel responde alguma
+coisa que o app do TikTok não responde? Ranking de hashtag, "melhor horário",
+mediana da conta, ritmo semanal, meia-vida, comentado e compartilhado por view
+saíram — ou o Analytics do TikTok já mostra, ou o número saía de 4 vídeos e era
+ruído.
 
 **O que fazer amanhã** — o primeiro painel, e o único escrito em frase. Junta o
-resto da tela em uma lista de ações: empurre este vídeo hoje, refaça aquele,
-volte a este assunto. Cada linha diz de onde saiu.
+resto da tela em uma lista de ações: grave mais longo, empurre este vídeo hoje,
+refaça aquele. Cada linha diz de onde saiu.
+
+**Monetização** — as três regras do Programa de Recompensas do Criador ao lado
+do medido: **views ganhas nos últimos 30 dias** (a regra pede 100 mil; até
+completar 30 dias de leitura o número é projetado e a tela diz isso),
+**seguidores** (a regra pede 10 mil; ainda não é lido — falta o escopo
+`user.info.stats`, e a tela diz isso em vez de mostrar um número velho) e
+**quantos dos vídeos publicados no período passam de 1 minuto** — só esses
+contam. Embaixo, quantas views novas cada faixa de duração ganhou por vídeo:
+medido nos dados dela, o vídeo de mais de 1 minuto ganhava **de 5 a 7 vezes**
+mais que o curto, e só 16% do que ela postava passava de 1 minuto.
 
 **Largada** — quanto o vídeo fez nas primeiras horas, comparado com os outros da
-**mesma idade**. Reagir a um vídeo que está subindo só vale enquanto ele sobe.
+**mesma idade**. Reagir a um vídeo que está subindo só vale enquanto ele sobe —
+e a janela, medida nos dados dela, é de uns 2 dias.
+
+**Acelerando agora** — views ganhas desde a última leitura e em 7 dias, por
+vídeo. O app só mostra o acumulado.
+
+**Ressuscitou** — vídeo com mais de 14 dias que voltou a crescer. O TikTok não
+avisa.
 
 **Vale refazer** — vídeos abaixo da sua mediana de views cujo público
 compartilhou ou comentou muito acima do normal. Não são vídeos ruins: são vídeos
 bons que não foram entregues.
 
-**Assunto que rendia e você parou** — assuntos acima da sua mediana que sumiram
-da rotina há mais de 21 dias. Pauta pronta, com público já testado.
-
-**Hashtags que rendem** — o assunto rotulado por você. Hashtag que você põe em
-todo vídeo aparece perto de 1,0x sozinha, sem precisar de lista negra.
-
-**Parcerias e marcas** — qual parceria rende mais.
-
-**Assunto em duas palavras** e **Como o título começa** — o assunto e o gancho,
-medidos. Trocar a abertura é a mudança mais barata que existe.
-
-**Comentado por visualização** — onde o público está pedindo conteúdo:
-comentário é dúvida, e dúvida é pauta pronta.
-
-**Quantos vídeos por dia** — se postar mais no mesmo dia está diluindo cada
-vídeo. Os últimos 3 dias ficam de fora, porque vídeo de ontem ainda está sendo
-entregue.
+**Parcerias e marcas** — qual parceria rende mais, em views. Comissão por marca
+entra quando a Central de Afiliados for ligada.
 
 Toda comparação diz de quantos vídeos saiu, e nenhuma usa média — um viral
 distorce qualquer média, e a mediana descreve o dia normal.
+
+Se o painel do computador (`painel.py`) copia `metricas.py` e `conteudo.py`
+daqui, atenção: `conteudo.tudo()` não existe mais e `conteudo.pauta()` recebe
+os painéis prontos em vez de recalculá-los. `metricas.painel_de_desempenho()`
+continua com a mesma assinatura.
 
 ## Qual vídeo é qual
 

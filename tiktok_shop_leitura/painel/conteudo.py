@@ -1,36 +1,32 @@
 # -*- coding: utf-8 -*-
-"""O que gravar amanhã — os painéis que respondem "sobre o quê", não "como foi".
+"""O que gravar amanhã — os painéis que respondem "o que fazer", não "como foi".
 
 POR QUE ISTO EXISTE (07/09/2026). Pedido dele: *"pense como um influenciador,
 buscando melhorias em como achar vídeos novos e assuntos novos para postar"*.
 
-O que já existia responde **como postar** (duração, horário, ritmo) e **o que
-aconteceu** (acelerando, ressuscitou, meia-vida). Nada respondia **o que
-gravar**. `metricas.temas()` chegava perto, mas jogava fora as duas pistas de
-assunto mais explícitas que existem nos dados:
+A REGRA QUE ESTE ARQUIVO INTEIRO OBEDECE: **um painel só entra se ela puder
+fazer alguma coisa com ele amanhã de manhã.** "Vale refazer" cabe;
+"distribuição de views por decil" não cabe.
 
-  - **as hashtags**, que são o assunto ROTULADO por ela mesma. O código antigo
-    apagava `#...` antes de contar palavras — de propósito, para `#fyp` não
-    poluir o ranking. Só que jogar fora `#quebracabeça` junto era jogar fora o
-    catálogo de assuntos dela inteiro. E a régua já resolve o `#fyp` sozinha:
-    hashtag que está em quase todo vídeo tem mediana igual à mediana geral, e
-    aparece como 1,0x — sozinha no meio do ranking, sem precisar de lista negra.
-  - **as menções**, que na conta dela são as MARCAS. Ela é afiliada; saber qual
-    parceria rende é decisão de negócio, não de curiosidade.
+O CORTE DE 18/09/2026 (1.4.0). Saíram daqui hashtags, frases de duas palavras,
+ganchos de título, "assunto que rendia e você parou", comentado por view e
+cadência. Motivo, medido nos dados dela: as hashtags que ela usa são de campanha
+(`#tiktokshopbr88`, `#tiktokshopbr66`... em 1.646 dos 2.430 vídeos), não de
+assunto; e o que sobrava no topo dos rankings saía de 4 vídeos ("#vangogh
+17,8x", "praia dunas cabo 9,66x") — pista fraca demais para virar pauta, e a
+pauta é o único produto desta tela. Ficou o que responde com amostra de
+verdade: a largada (reaja agora), o refazer (o vídeo bom que não foi entregue)
+e as parcerias (que marca rende, porque ela é afiliada e isso é dinheiro).
 
 AS DUAS REGRAS DA CASA VALEM AQUI (ver metricas.py): mediana e nunca média, e
 toda comparação diz de quantos vídeos saiu.
-
-E A REGRA NOVA, que este arquivo inteiro obedece: **um painel só entra se ela
-puder fazer alguma coisa com ele amanhã de manhã.** "Assunto que rendia e você
-parou de postar" cabe; "distribuição de views por decil" não cabe.
 """
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from comum import (MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS, identidade, mediana, n,
-                   palavras, quando, texto_do_video)
+                   quando, texto_do_video)
 
 # Uma marca/parceria precisa de menos vídeos que um assunto para virar linha na
 # tela: ela tem poucas parcerias e cada uma vale muito, então exigir a mesma
@@ -46,23 +42,19 @@ def _ranking(videos, extrair, minimo, quantos, rotular=None):
     `extrair` devolve o conjunto de termos de um vídeo (conjunto, não lista:
     a palavra repetida três vezes no mesmo texto não pode contar como três
     vídeos). A conta é sempre a mesma — a mediana do grupo contra a mediana
-    geral — e é ela que faz `#fyp` cair sozinho para 1,0x sem lista negra.
+    geral — e é ela que faz uma menção presente em todo vídeo cair sozinha para
+    1,0x sem lista negra.
     """
     geral = mediana([n(v.get("view_count")) for v in videos])
     if not geral:
         return {"geral": None, "amostra": 0, "itens": [], "piores": []}
 
     onde = {}
-    quais = {}
     quando_ultimo = {}
     for v in videos:
         publicado = quando(v.get("create_time"))
         for termo in set(extrair(v) or []):
             onde.setdefault(termo, []).append(n(v.get("view_count")))
-            # QUAIS vídeos, e não só quantos. É o que permite descobrir que
-            # "#suportecarro" e "veicular suporte" são os MESMOS seis vídeos —
-            # dois nomes para uma pauta só. Ver `_sem_repetir`.
-            quais.setdefault(termo, set()).add(v.get("id"))
             if publicado and (termo not in quando_ultimo
                               or publicado > quando_ultimo[termo]):
                 quando_ultimo[termo] = publicado
@@ -79,67 +71,18 @@ def _ranking(videos, extrair, minimo, quantos, rotular=None):
             "videos": len(vistos),
             "mediana": med,
             "vezes_a_geral": round(med / geral, 2) if geral else None,
-            # Em quantos % dos vídeos o termo aparece. É o que denuncia a
-            # hashtag-de-encher: 90% de presença e 1,0x não é assunto, é hábito.
+            # Em quantos % dos vídeos o termo aparece. 90% de presença e 1,0x
+            # não é parceria, é assinatura.
             "presenca": round(len(vistos) / total * 100, 1) if total else 0,
             "ultimo_uso": ultimo.strftime("%Y-%m-%d") if ultimo else None,
             "dias_sem_usar": (datetime.now() - ultimo).days if ultimo else None,
-            "ids": quais.get(termo) or set(),
         })
     itens.sort(key=lambda x: -(x["vezes_a_geral"] or 0))
     return {"geral": geral, "amostra": total, "itens": itens[:quantos],
-            "piores": itens[-quantos:][::-1] if len(itens) > quantos else [],
-            "todos": itens}
+            "piores": itens[-quantos:][::-1] if len(itens) > quantos else []}
 
 
-# --------------------------------------------------------------- os assuntos
-
-def _tags_do_video(v):
-    """As hashtags, em minúscula.
-
-    O hífen NÃO entra no conjunto de caracteres de propósito: o TikTok corta a
-    hashtag no primeiro caractere que não é letra ou número, então `#quebra-cabeça`
-    vira a tag `quebra` lá dentro. Aceitar o hífen aqui inventaria uma hashtag
-    que não existe na plataforma e que ninguém pode pesquisar.
-    """
-    return [t.lower() for t in
-            re.findall(r"#([0-9A-Za-zÀ-ÿ_]+)", texto_do_video(v))]
-
-
-def _sem_repetir(itens, sobreposicao=0.7):
-    """Tira os termos que descrevem o MESMO punhado de vídeos.
-
-    Achado testando com os dados dela: a pauta saía com "#suportecarro" (8,88x,
-    6 vídeos), "veicular suporte" (8,88x, 6 vídeos) e "acabarem alves" (8,88x,
-    6 vídeos) — três linhas, uma pauta só. O número idêntico entregou o jogo:
-    são as mesmas seis publicações vistas por três recortes do texto.
-
-    Três linhas iguais numa lista de oito ocupam o lugar de três ideias
-    diferentes, que é o único produto desta tela. O primeiro termo fica (a lista
-    já vem ordenada pelo que rendeu mais) e os que repetem os mesmos vídeos
-    saem.
-    """
-    fora = []
-    for i in itens:
-        meus = i.get("ids") or set()
-        if any(meus and len(meus & (j.get("ids") or set())) /
-               float(len(meus)) >= sobreposicao for j in fora):
-            continue
-        fora.append(i)
-    return fora
-
-
-def hashtags(videos, minimo=4, quantos=15):
-    """Que hashtag rende mais — o assunto rotulado por ela mesma.
-
-    A tela precisa dizer o que a coluna "presença" significa: hashtag que ela
-    põe em tudo (`#tiktokshopbr77`, `#creatorsearchinsights`) não separa vídeo
-    bom de ruim, e vai aparecer perto de 1,0x. As que sobem acima disso são as
-    que marcam ASSUNTO — e assunto é o que dá para repetir amanhã.
-    """
-    return _ranking(videos, _tags_do_video, minimo, quantos,
-                    rotular=lambda t: "#" + t)
-
+# --------------------------------------------------------------- as marcas
 
 def _mencoes_do_video(v):
     return [m.lower() for m in
@@ -154,49 +97,12 @@ def parcerias(videos, minimo=MINIMO_DE_PARCERIA, quantos=12):
     separaria igual. Então `@grupo` aqui é "a parceria com o Grupo On Line",
     e não uma conta chamada "grupo". Serve para comparar parcerias entre si,
     que é a pergunta dela; não serve como identificador de conta.
+
+    Mede VIEWS, não comissão. É o que a Display API dá. Quando a API de
+    afiliado entrar (fase 2), este painel vira "marcas que pagam".
     """
     return _ranking(videos, _mencoes_do_video, minimo, quantos,
                     rotular=lambda m: "@" + m)
-
-
-def _frases_do_video(v):
-    """Pares de palavras vizinhas — "quebra cabeça", "kit pincéis".
-
-    Palavra solta espalha o assunto: "kit" aparece em kit de pincéis, kit de
-    maquiagem e kit de cozinha, e a mediana de "kit" não descreve nenhum dos
-    três. O par de palavras é a menor unidade que ainda é um ASSUNTO.
-
-    As palavras de ligação já saíram em `palavras()`, então "kit de pincéis"
-    chega aqui como "kit pinceis" — o par vizinho depois da limpeza, que é o
-    que junta as variações que ela escreve de jeitos diferentes.
-    """
-    ps = palavras(texto_do_video(v))
-    return [ps[i] + " " + ps[i + 1] for i in range(len(ps) - 1)]
-
-
-def frases(videos, minimo=4, quantos=15):
-    """Assunto em duas palavras. Mais específico que `metricas.temas()`."""
-    return _ranking(videos, _frases_do_video, minimo, quantos)
-
-
-def _gancho_do_video(v, palavras_do_gancho=3):
-    """As primeiras palavras do TÍTULO — o que a pessoa lê antes de decidir.
-
-    Só o título, nunca a descrição: a descrição é onde moram as hashtags e o
-    texto de afiliado, e ninguém lê aquilo antes de decidir se fica no vídeo.
-    """
-    ps = palavras(v.get("title") or "")[:palavras_do_gancho]
-    return [" ".join(ps)] if len(ps) == palavras_do_gancho else []
-
-
-def ganchos(videos, minimo=3, quantos=12):
-    """Que abertura de título rendeu mais.
-
-    Ela publica 15-16 vídeos por dia e repete fórmulas de abertura sem medir
-    qual delas funciona. Isto mede — e trocar a abertura é a mudança mais
-    barata que existe: não exige regravar nada.
-    """
-    return _ranking(videos, _gancho_do_video, minimo, quantos)
 
 
 # ------------------------------------------------ o que fazer com o que já existe
@@ -257,120 +163,16 @@ def refazer(videos, quantos=10, idade_minima=14, fator=2.0):
             "mediana_comentario": round(med_coment, 2)}
 
 
-def esquecidos(videos, dias=21, minimo=5, quantos=12, forca=1.3):
-    """Assunto que rendia acima da média dela e que ela parou de postar.
-
-    POR QUE ISTO É O PAINEL MAIS PARECIDO COM "TEMA NOVO". Ninguém tem ideia
-    nova todo dia, e a conta dela já tem 2.300 vídeos de tentativas. O assunto
-    que rendeu 2x e sumiu há um mês é uma pauta pronta que ela já sabe gravar,
-    com público já testado — custa uma tarde, não uma aposta.
-
-    Vale para hashtag e para frase, com o rótulo do tipo junto: são as duas
-    unidades que descrevem assunto sem virar palavra solta.
-    """
-    fora = []
-    for tipo, funcao in (("hashtag", hashtags), ("assunto", frases)):
-        r = funcao(videos, minimo=minimo, quantos=10 ** 6)
-        for i in r.get("todos") or []:
-            if (i["vezes_a_geral"] or 0) < forca:
-                continue
-            if i["dias_sem_usar"] is None or i["dias_sem_usar"] < dias:
-                continue
-            # Hashtag que ela põe em quase tudo não é assunto esquecido: se
-            # aparece em 60% dos vídeos e "sumiu", o que mudou foi o hábito de
-            # marcar, não o assunto gravado.
-            if i["presenca"] > 40:
-                continue
-            fora.append(dict(i, tipo=tipo))
-    # O que rendeu mais primeiro; o tempo parado só desempata. Ela tem uma noite
-    # por semana para isso, e a ordem da lista é a ordem em que ela vai gravar.
-    #
-    # NO EMPATE, A HASHTAG GANHA DA FRASE, e isso decide mais do que parece:
-    # os mesmos 6 vídeos apareciam como "#suportecarro" e como "acabarem alves"
-    # (pedaço da assinatura que ela escreve no fim do texto), empatados em
-    # 8,88x. `_sem_repetir` mantém o primeiro — e o primeiro tem que ser o que
-    # ela consegue usar. "#suportecarro" é assunto, dá para pesquisar e dá para
-    # repetir; "acabarem alves" não é pauta de nada.
-    fora.sort(key=lambda x: (-(x["vezes_a_geral"] or 0),
-                             x["tipo"] != "hashtag",
-                             -(x["dias_sem_usar"] or 0)))
-    return {"itens": [_enxuto(i) for i in _sem_repetir(fora)[:quantos]],
-            "dias": dias}
-
-
-def taxa_de_comentario(videos, quantos=10):
-    """Comentário por view — onde o público está PEDINDO conteúdo.
-
-    Compartilhamento mede alcance; comentário mede vontade de conversar. Na
-    prática, o vídeo muito comentado é o que gerou dúvida — e dúvida é pauta
-    pronta: o próximo vídeo é a resposta, e já nasce com público interessado.
-    """
-    itens = []
-    for v in videos:
-        vistos = n(v.get("view_count"))
-        if vistos < MINIMO_DE_VIEWS:
-            continue
-        itens.append(dict(identidade(v), id=v.get("id"), views=vistos,
-                          comentarios=n(v.get("comment_count")),
-                          taxa=round(n(v.get("comment_count")) / vistos * 100, 2)))
-    itens.sort(key=lambda x: -x["taxa"])
-    return {"itens": itens[:quantos], "amostra": len(itens),
-            "mediana": mediana([i["taxa"] for i in itens])}
-
-
-# -------------------------------------------------------------- a rotina dela
-
-def cadencia(videos, maturacao_dias=3, quantos=21):
-    """Postar mais no mesmo dia está diluindo o resultado de cada vídeo?
-
-    A PERGUNTA MAIS CARA DA ROTINA DELA. São 15-16 vídeos por dia; se a partir
-    do décimo o retorno cai, ela está gastando horas para empurrar o próprio
-    vídeo para baixo. `metricas.ritmo()` já cruza cadência com resultado por
-    SEMANA — mas a decisão dela é diária ("gravo mais um hoje ou não?"), e a
-    semana esconde o dia dentro da média.
-
-    OS ÚLTIMOS DIAS FICAM DE FORA (`maturacao_dias`). Vídeo de ontem ainda está
-    sendo entregue: incluí-lo faria todo dia recente parecer fraco e a conta
-    diria "poste menos" só porque a leitura é recente.
-    """
-    corte = datetime.now() - timedelta(days=maturacao_dias)
-    por_dia = {}
-    for v in videos:
-        q = quando(v.get("create_time"))
-        if not q or q > corte:
-            continue
-        por_dia.setdefault(q.strftime("%Y-%m-%d"), []).append(n(v.get("view_count")))
-
-    dias = [{"dia": d, "videos": len(vs), "mediana": mediana(vs)}
-            for d, vs in sorted(por_dia.items())]
-    if len(dias) < 6:
-        return {"pronto": False, "dias": dias, "faltam": 6 - len(dias)}
-
-    # O corte é a mediana DELA de vídeos por dia, não um número inventado: a
-    # pergunta é "mais do que o meu normal atrapalha?", e o normal é o dela.
-    corte_de_volume = mediana([d["videos"] for d in dias]) or 0
-    leves = [d["mediana"] for d in dias if d["videos"] <= corte_de_volume]
-    pesados = [d["mediana"] for d in dias if d["videos"] > corte_de_volume]
-    resposta = {"pronto": True, "dias": dias[-quantos:],
-                "corte": corte_de_volume,
-                "leves": {"dias": len(leves), "mediana": mediana(leves)},
-                "pesados": {"dias": len(pesados), "mediana": mediana(pesados)}}
-    a, b = resposta["leves"]["mediana"], resposta["pesados"]["mediana"]
-    # Só conclui com os dois lados na mão e com dias suficientes de cada lado.
-    # Meia comparação vira conselho inventado, e conselho de rotina é o mais
-    # caro de seguir errado.
-    if a and b and len(leves) >= MINIMO_DE_VIDEOS and len(pesados) >= MINIMO_DE_VIDEOS:
-        resposta["diferenca"] = round((b - a) / a * 100, 1)
-    return resposta
-
+# -------------------------------------------------------------- a largada
 
 def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12, por_id=None):
     """Quanto o vídeo faz nas primeiras horas — e quais estão acima disso AGORA.
 
     POR QUE ISTO É O PAINEL MAIS URGENTE DE TODOS. Reagir a um vídeo que está
     subindo só vale enquanto ele sobe: responder comentário, fixar comentário,
-    gravar a parte 2, empurrar o link. A meia-vida dela mede quanto tempo a
-    janela dura; ISTO diz, dentro da janela, quais vídeos merecem a energia.
+    gravar a parte 2, empurrar o link. ISTO diz, dentro da janela, quais vídeos
+    merecem a energia. (A meia-vida dela, medida enquanto o painel existiu, era
+    de 2 dias para juntar 80% das views: é a janela em que vale insistir.)
 
     DUAS ARMADILHAS, as duas descobertas medindo os dados reais dela:
 
@@ -454,7 +256,7 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12, por_id=None):
 
 # ------------------------------------------------------------------- a pauta
 
-def pauta(videos, fotos, quantos=8, por_id=None):
+def pauta(largada_, refazer_, monet, quantos=8):
     """A lista do dia seguinte, em frases que ela pode executar.
 
     POR QUE EM FRASE, e não mais um gráfico: nenhum painel desta tela diz o que
@@ -464,10 +266,51 @@ def pauta(videos, fotos, quantos=8, por_id=None):
 
     Cada linha carrega de onde saiu. Conselho sem origem, ela não tem como
     conferir — e conselho que não se confere, com o tempo, não se segue.
+
+    RECEBE OS PAINÉIS PRONTOS em vez de recalculá-los: a versão anterior
+    chamava largada, refazer, esquecidos, hashtags, cadência e ganchos por
+    dentro, e isso eram 4,4 dos 44 segundos da tela — tudo já calculado uma
+    linha acima em `metricas.tudo()`.
+
+    A LINHA DE DINHEIRO VEM PRIMEIRO. Ela passou de 10 mil seguidores; o que
+    decide se a conta monetiza é gravar acima de 1 minuto e manter 100 mil
+    views em 30 dias. Isso vale mais que qualquer vídeo específico.
     """
     linhas = []
 
-    lg = largada(fotos, por_id=por_id)
+    m = monet or {}
+    if m.get("pronto"):
+        regras = m.get("regras") or {}
+        pct = m.get("pct_longos")
+        if pct is not None and pct < 50:
+            texto = ("Só %s%% dos %d vídeos publicados nos últimos %d dias passam de "
+                     "1 minuto, e só esses contam no Programa de Recompensas."
+                     % (("%.0f" % pct), m.get("publicados") or 0,
+                        m.get("janela_dias") or 30))
+            if m.get("longo_vs_curto"):
+                texto += (" Neste período o vídeo longo ganhou %sx mais views "
+                          "novas por vídeo do que o curto." % m["longo_vs_curto"])
+            linhas.append({
+                "acao": "GRAVE MAIS LONGO",
+                "texto": texto,
+                "de_onde": "monetização: %d vídeos medidos em %d dia(s)"
+                           % (m.get("videos_medidos") or 0, m.get("dias_medidos") or 0),
+            })
+        vezes = m.get("views_vezes")
+        folga = regras.get("folga") or 1.5
+        if vezes is not None and vezes < folga:
+            linhas.append({
+                "acao": "ATENÇÃO ÀS VIEWS" if m.get("views_ok") else "FORA DA REGRA",
+                "texto": "A conta está em %s views em 30 dias%s — a regra pede %s. "
+                         "%s" % ("{:,}".format(m.get("views_30d") or 0).replace(",", "."),
+                                 " (projetado)" if m.get("projetado") else "",
+                                 "{:,}".format(regras.get("views_30d") or 0).replace(",", "."),
+                                 "Está dentro, mas sem folga." if m.get("views_ok")
+                                 else "Está fora."),
+                "de_onde": "monetização: ganho de views desde %s" % m.get("desde"),
+            })
+
+    lg = largada_ or {}
     if lg.get("pronto") and lg.get("mediana"):
         subindo = sorted([i for i in lg["itens"]
                           if (i["vezes_a_largada"] or 0) >= 1.5],
@@ -485,8 +328,21 @@ def pauta(videos, fotos, quantos=8, por_id=None):
                                            i["comparaveis"], i["faixa_rotulo"]),
             })
 
-    rf = refazer(videos)
-    for i in rf["itens"][:2]:
+    # O MESMO VÍDEO NÃO OCUPA DUAS VAGAS. Ela publica o mesmo produto em cortes
+    # diferentes com o mesmo título ("@Piracanjuba #meucarnavalproforce", duas
+    # vezes, 137 e 135 views), e os dois saíam na pauta como se fossem duas
+    # ideias. A lista tem duas vagas para REFAÇA; que sejam dois assuntos.
+    rf = refazer_ or {}
+    vistos, escolhidos = set(), []
+    for i in rf.get("itens") or []:
+        chave = (i.get("titulo") or "").strip().lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        escolhidos.append(i)
+        if len(escolhidos) == 2:
+            break
+    for i in escolhidos:
         linhas.append({
             "acao": "REFAÇA",
             "link": i.get("link"), "capa": i.get("capa"),
@@ -498,105 +354,4 @@ def pauta(videos, fotos, quantos=8, por_id=None):
             "de_onde": "mediana da conta: %.0f views" % rf["mediana_views"],
         })
 
-    esq = esquecidos(videos)
-    for i in esq["itens"][:3]:
-        linhas.append({
-            "acao": "VOLTE AO ASSUNTO",
-            "texto": '%s rendeu %sx a sua mediana em %d vídeos e você não posta '
-                     "há %d dias." % (i["termo"], i["vezes_a_geral"], i["videos"],
-                                      i["dias_sem_usar"]),
-            "de_onde": "último uso em %s" % i["ultimo_uso"],
-        })
-
-    ht = hashtags(videos)
-    # AINDA VIVO: sem o corte de dias, a mesma hashtag saía como "REPITA,
-    # ainda é assunto vivo" e como "VOLTE AO ASSUNTO, parada há 67 dias" na
-    # mesma lista — duas frases opostas sobre a mesma coisa, e a lista inteira
-    # perde a confiança de quem lê.
-    # `_sem_repetir` aqui também: `#puzzle` e `#noiteestrelada` são as duas
-    # hashtags dos MESMOS vídeos de quebra-cabeça, e ocupariam as duas vagas
-    # de "repita" com uma ideia só.
-    quentes = _sem_repetir(
-        [i for i in ht["itens"] if (i["vezes_a_geral"] or 0) >= 1.3
-         and i["presenca"] <= 40
-         and (i["dias_sem_usar"] is not None and i["dias_sem_usar"] <= 14)])[:2]
-    for i in quentes:
-        linhas.append({
-            "acao": "REPITA",
-            "texto": "%s está %sx acima da sua mediana (%d vídeos) e ainda é "
-                     "assunto vivo — vale mais um esta semana."
-                     % (i["termo"], i["vezes_a_geral"], i["videos"]),
-            "de_onde": "hashtags, mediana geral %.0f views" % (ht["geral"] or 0),
-        })
-
-    cd = cadencia(videos)
-    if cd.get("pronto") and cd.get("diferenca") is not None:
-        if cd["diferenca"] <= -15:
-            linhas.append({
-                "acao": "POSTE MENOS",
-                "texto": "Nos dias em que você passa de %d vídeos, a mediana de "
-                         "cada um cai %.0f%%. Menos vídeos melhor acabados rendem "
-                         "mais que a fila inteira."
-                         % (cd["corte"], abs(cd["diferenca"])),
-                "de_onde": "%d dias leves contra %d dias pesados"
-                           % (cd["leves"]["dias"], cd["pesados"]["dias"]),
-            })
-        elif cd["diferenca"] >= 15:
-            linhas.append({
-                "acao": "PODE POSTAR MAIS",
-                "texto": "Nos dias em que você passa de %d vídeos, a mediana de "
-                         "cada um ainda sobe %.0f%% — o volume não está "
-                         "atrapalhando." % (cd["corte"], cd["diferenca"]),
-                "de_onde": "%d dias leves contra %d dias pesados"
-                           % (cd["leves"]["dias"], cd["pesados"]["dias"]),
-            })
-
-    gc = ganchos(videos)
-    if gc["itens"] and (gc["itens"][0]["vezes_a_geral"] or 0) >= 1.3:
-        i = gc["itens"][0]
-        linhas.append({
-            "acao": "COMECE ASSIM",
-            "texto": 'Títulos que começam com "%s" fazem %sx a sua mediana '
-                     "(%d vídeos). Trocar a abertura não custa regravar nada."
-                     % (i["termo"], i["vezes_a_geral"], i["videos"]),
-            "de_onde": "ganchos de título",
-        })
-
     return {"itens": linhas[:quantos]}
-
-
-def _enxuto(d):
-    """Deixa de fora o que é ferramenta interna, não resposta para a tela.
-
-    `todos` existe porque `esquecidos` precisa varrer o ranking inteiro, e
-    `ids` porque `_sem_repetir` precisa saber de quais vídeos cada termo veio.
-    Nenhum dos dois é desenhado; mandar os dois numa conta de 2.300 vídeos
-    pesaria mais que todo o resto da resposta junto. E `ids` é um `set`, que
-    nem sequer atravessa o `json.dumps` — sem esta limpeza, a tela quebra
-    inteira em vez de só ficar pesada.
-    """
-    return {k: v for k, v in d.items() if k not in ("todos", "ids")}
-
-
-def _ranking_enxuto(r):
-    """Um ranking inteiro pronto para virar JSON: sem `todos`, sem `ids`."""
-    limpo = _enxuto(r)
-    for chave in ("itens", "piores"):
-        limpo[chave] = [_enxuto(i) for i in (limpo.get(chave) or [])]
-    return limpo
-
-
-def tudo(videos, fotos, por_id=None):
-    """Todos os painéis de conteúdo numa chamada só."""
-    return {
-        "pauta": pauta(videos, fotos, por_id=por_id),
-        "largada": largada(fotos, por_id=por_id),
-        "hashtags": _ranking_enxuto(hashtags(videos)),
-        "parcerias": _ranking_enxuto(parcerias(videos)),
-        "frases": _ranking_enxuto(frases(videos)),
-        "ganchos": _ranking_enxuto(ganchos(videos)),
-        "refazer": refazer(videos),
-        "esquecidos": esquecidos(videos),
-        "comentario": taxa_de_comentario(videos),
-        "cadencia": cadencia(videos),
-    }

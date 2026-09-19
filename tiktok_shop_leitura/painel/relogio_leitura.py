@@ -82,6 +82,22 @@ def segundos_ate(agora, hora=HORA):
     return (proxima_leitura(agora, hora) - agora).total_seconds()
 
 
+def _painel_pronto(motivo):
+    """Deixa o painel calculado no disco, logo depois de ler.
+
+    E' AQUI que o calculo (uns 4 s no Pi) acontece de proposito - a 1h da
+    manha, com a maquina ociosa e ninguem olhando - para que a tela abra em
+    menos de um segundo o dia inteiro. Nunca pode derrubar o relogio: painel que nao ficou
+    pronto e' calculado quando alguem abrir a tela; dia sem leitura nao volta.
+    """
+    try:
+        import pronto
+        import tiktok
+        pronto.preparar_todas(tiktok, motivo)
+    except Exception as e:
+        print("o painel nao ficou pronto: %s" % e)
+
+
 def main():
     import puxar_diario
     print("relogio da leitura no ar - lendo todo dia as %dh" % HORA)
@@ -95,6 +111,7 @@ def main():
             puxar_diario.main()
         except Exception as e:
             print("a leitura de recuperacao falhou: %s" % e)
+        _painel_pronto(" (depois da leitura de recuperacao)")
 
     while True:
         agora = datetime.now()
@@ -116,6 +133,7 @@ def main():
             # UM DIA PERDIDO NÃO PODE DERRUBAR O RELÓGIO. Se o laço morrer,
             # perdem-se todos os dias seguintes em vez de um só.
             print("a leitura de hoje falhou: %s" % e)
+        _painel_pronto(" (depois da leitura das %dh)" % HORA)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ nomes dos montados e ficou para a fase 2.
 import json
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -22,7 +23,7 @@ from urllib.parse import urlparse, parse_qs
 PASTA = Path(__file__).resolve().parent
 sys.path.insert(0, str(PASTA))
 
-import metricas
+import pronto
 import tiktok
 
 def _versao():
@@ -129,9 +130,10 @@ class Alca(BaseHTTPRequestHandler):
             return self.pagina()
         if c == "/api/desempenho":
             conta = (parse_qs(urlparse(self.path).query).get("conta") or [""])[0]
+            # DO DISCO, nao calculado agora: abrir a tela levava 44 s no Pi e o
+            # navegador desistia antes (BrokenPipe no log). Ver pronto.py.
             try:
-                d = metricas.painel_de_desempenho(
-                    tiktok, conta or None, estado_daqui)
+                d = pronto.desempenho(tiktok, conta or None, estado_daqui)
             except Exception as e:
                 d = {"ok": False, "erro": str(e)}
             return self.json(d)
@@ -193,6 +195,15 @@ class Alca(BaseHTTPRequestHandler):
             except Exception as e:
                 linha["erro"] = str(e)
             perfis.append(linha)
+        # O PAINEL PRONTO ANTES DE A PAGINA RECARREGAR. A leitura acabou de
+        # mudar as fotografias, entao o arquivo gravado nao vale mais; calcular
+        # aqui (uns segundos, depois de minutos de leitura) e' o que faz o
+        # reload seguinte abrir na hora em vez de travar.
+        if algum:
+            try:
+                pronto.preparar_todas(tiktok, " (depois de Ler agora)")
+            except Exception as e:
+                print("painel nao ficou pronto depois da leitura: %s" % e)
         return {"ok": algum, "perfis": perfis,
                 "recado": "; ".join(
                     "%s: %s" % (p["nome"], p.get("recado") or p.get("erro"))
@@ -210,6 +221,15 @@ def main():
     s = Servidor(porta)
     print("servidor de leitura no ar na porta %d (versao %s)" % (porta, VERSAO))
     print("dados em %s" % tiktok.BASE)
+    # O PAINEL FICA PRONTO ENQUANTO NINGUEM OLHA. Depois de uma atualizacao o
+    # arquivo gravado nao vale mais (a versao entra na chave); calcular agora,
+    # em segundo plano, poupa a primeira pessoa que abrir a tela de esperar.
+    # Em segundo plano e nao antes do serve_forever: o watchdog do HA mede a
+    # porta, e segundos de porta fechada no arranque contam como container
+    # morto.
+    threading.Thread(target=pronto.preparar_todas,
+                     args=(tiktok, " (ao subir o servidor)"),
+                     daemon=True).start()
     s.serve_forever()
 
 

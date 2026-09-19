@@ -11,8 +11,23 @@ semanas voltou a crescer. A API também devolve só o acumulado do momento — a
 dimensão de tempo **não existe em lugar nenhum** até alguém guardar leituras
 sucessivas. É o que `tiktok.guardar_foto()` faz, uma por dia.
 
-Metade das contas aqui vive dessa série e só ganha valor com os dias passando; a
-outra metade funciona já na primeira leitura. As duas estão marcadas.
+O CORTE DE 18/09/2026 (1.4.0). A tela tinha 21 painéis e levava **44 segundos**
+para abrir no Raspberry. Medido painel por painel: o "Resumo" sozinho eram 18 s
+porque recalculava acelerando, ressurreições, meia-vida, hashtags e a pauta por
+dentro; acelerando e ressurreições montavam a mesma série de 2.430 vídeos × 15
+dias duas vezes. Treze painéis saíram, por um critério só: **responde alguma
+coisa que o app do TikTok não responde?** Trajetória responde — o app só tem o
+acumulado. Ranking de hashtag, "melhor horário", mediana da conta, ritmo
+semanal, meia-vida, comentado/compartilhado por view: ou o Analytics do TikTok
+já mostra, ou saía de 4 vídeos e era ruído ("#vangogh 17,8x, 4 vídeos"). O que
+entrou no lugar foi a **monetização**: ela passou de 10 mil seguidores, e o
+Programa de Recompensas exige 100 mil views em 30 dias em vídeos de mais de 1
+minuto — e só 16% do que ela postava passava de 1 minuto, enquanto o vídeo
+longo ganhava de 5 a 7 vezes mais views novas por vídeo do que o curto
+(conforme a janela medida).
+
+O que sobrou é calculado uma vez por dia e gravado (ver `pronto.py`); a tela lê
+o arquivo. Abrir a tela não calcula nada.
 
 DUAS REGRAS QUE VALEM PARA TUDO NESTE ARQUIVO:
 
@@ -24,20 +39,15 @@ DUAS REGRAS QUE VALEM PARA TUDO NESTE ARQUIVO:
    nada. Sem o piso, o ranking enche de ruído e aponta pro lugar errado.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import lru_cache
 
 import conteudo
-from comum import MINIMO_DE_VIDEOS, MINIMO_DE_VIEWS
+from comum import MINIMO_DE_VIDEOS
 from comum import identidade as _identidade
 from comum import mediana as _mediana
 from comum import n as _n
-from comum import palavras as _palavras
 from comum import quando as _quando
-
-# As contas miúdas (mediana, data, palavras úteis) e os dois pisos mudaram-se
-# para comum.py quando conteudo.py passou a precisar das mesmas. Os nomes com
-# sublinhado continuam aqui porque este arquivo os usa em trinta lugares, e
-# renomear tudo transformaria uma extração de duas linhas numa reescrita.
 
 
 def ultimos_videos(fotos):
@@ -48,7 +58,12 @@ def ultimos_videos(fotos):
 
 
 def serie_por_video(fotos):
-    """{id: [(dia, views), ...]} em ordem, uma entrada por fotografia."""
+    """{id: [(dia, views), ...]} em ordem, uma entrada por fotografia.
+
+    É A CONTA MAIS CARA DO ARQUIVO (2.430 vídeos × 15 dias) e por isso é feita
+    UMA vez em `tudo()` e passada adiante. Antes cada painel de trajetória
+    montava a sua, e só isso custava 12 dos 44 segundos da tela.
+    """
     serie = {}
     for f in fotos:
         dia = f.get("dia")
@@ -61,8 +76,14 @@ def serie_por_video(fotos):
     return serie
 
 
+@lru_cache(maxsize=4096)
 def _dias_entre(a, b):
-    """Dias entre dois rótulos AAAA-MM-DD. 1 quando não der para saber."""
+    """Dias entre dois rótulos AAAA-MM-DD. 1 quando não der para saber.
+
+    COM CACHE, e isso é metade do tempo do cálculo inteiro: são 2.430 vídeos ×
+    14 intervalos × 3 painéis, quase 200 mil chamadas, para 15 pares de dias
+    distintos. Medido: acelerando caía de 5,0 s para menos de 1 s só com isto.
+    """
     try:
         return max(1, (datetime.strptime(b, "%Y-%m-%d")
                        - datetime.strptime(a, "%Y-%m-%d")).days)
@@ -97,7 +118,7 @@ def _ganhos_diarios(pontos):
 #  PRECISAM DE HISTÓRICO
 # =========================================================================
 
-def acelerando(fotos, quantos=10, por_id=None):
+def acelerando(fotos, quantos=10, por_id=None, serie=None):
     """O que está pegando fogo AGORA: views ganhas na última leitura e em 7.
 
     É a pergunta mais urgente de quem posta todo dia, e o app não responde: lá
@@ -108,31 +129,37 @@ def acelerando(fotos, quantos=10, por_id=None):
     if len(fotos) < 2:
         return {"pronto": False, "faltam": 2 - len(fotos), "itens": []}
 
-    serie = serie_por_video(fotos)
+    serie = serie if serie is not None else serie_por_video(fotos)
     atuais = {v.get("id"): v for v in ultimos_videos(fotos)}
-    itens = []
+    # ORDENA PELO RITMO, não pelo bruto: entre um vídeo que ganhou 900 views em
+    # três dias e um que ganhou 500 em um, quem está pegando fogo agora é o
+    # segundo — e "agora" é a pergunta inteira deste painel.
+    # E ORDENA ANTES DE MONTAR A IDENTIDADE: título limpo, link e capa para os
+    # 2.430 vídeos, quando a tela mostra 10, era metade do tempo deste painel.
+    brutos = []
     for vid, pontos in serie.items():
         ganhos = _ganhos_diarios(pontos)
         if not ganhos:
             continue
+        brutos.append((ganhos[-1][2], vid, pontos, ganhos))
+    brutos.sort(key=lambda x: -x[0])
+    itens = []
+    for ritmo, vid, pontos, ganhos in brutos[:quantos]:
         v = atuais.get(vid) or {}
         reserva = (por_id or {}).get(vid)
         itens.append(dict(_identidade(v, reserva), **{
             "id": vid,
             "views": _n(v.get("view_count")) or _n((reserva or {}).get("view_count")),
             "ganho_ultimo": ganhos[-1][1],
-            "ganho_por_dia": round(ganhos[-1][2], 1),
+            "ganho_por_dia": round(ritmo, 1),
             "dias_do_intervalo": _dias_entre(pontos[-2][0], pontos[-1][0]),
             "ganho_7d": sum(g for _, g, _r in ganhos[-7:]),
         }))
-    # ORDENA PELO RITMO, não pelo bruto: entre um vídeo que ganhou 900 views em
-    # três dias e um que ganhou 500 em um, quem está pegando fogo agora é o
-    # segundo — e "agora" é a pergunta inteira deste painel.
-    itens.sort(key=lambda x: -x["ganho_por_dia"])
-    return {"pronto": True, "itens": itens[:quantos]}
+    return {"pronto": True, "itens": itens}
 
 
-def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None):
+def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None,
+                  serie=None):
     """Vídeo velho que voltou a crescer.
 
     POR QUE ISTO IMPORTA MAIS DO QUE PARECE: o TikTok revive vídeo antigo o tempo
@@ -146,7 +173,7 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None):
     if len(fotos) < 4:
         return {"pronto": False, "faltam": 4 - len(fotos), "itens": []}
 
-    serie = serie_por_video(fotos)
+    serie = serie if serie is not None else serie_por_video(fotos)
     atuais = {v.get("id"): v for v in ultimos_videos(fotos)}
     agora = datetime.now()
     itens = []
@@ -176,322 +203,146 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None):
     return {"pronto": True, "itens": itens}
 
 
-def meia_vida(fotos, alvo=0.8):
-    """Quantos dias o vídeo leva pra juntar 80% das views que tem hoje.
-
-    Responde "por quanto tempo vale continuar empurrando um vídeo". Se a meia
-    vida dela é de 2 dias, insistir no quarto dia é gastar energia no lugar
-    errado; se é de 10, parar no terceiro é desistir cedo.
-
-    Só entram vídeos que já foram vistos desde cedo pela série - de outro modo a
-    conta mede quando a gente começou a olhar, não quando o vídeo cresceu.
-    """
-    if len(fotos) < 3:
-        return {"pronto": False, "faltam": 3 - len(fotos), "dias": None, "amostra": 0}
-
-    serie = serie_por_video(fotos)
-    atuais = {v.get("id"): v for v in ultimos_videos(fotos)}
-    dias = []
-    for vid, pontos in serie.items():
-        if len(pontos) < 3:
-            continue
-        v = atuais.get(vid) or {}
-        nasceu = _quando(v.get("create_time"))
-        primeiro = None
-        try:
-            primeiro = datetime.strptime(pontos[0][0], "%Y-%m-%d")
-        except (ValueError, TypeError):
-            continue
-        # A primeira leitura tem que ser perto do nascimento do vídeo, senão a
-        # série começa no meio da vida dele e a conta mente pra menos.
-        if not nasceu or (primeiro - nasceu).days > 2:
-            continue
-        total = pontos[-1][1]
-        if total < MINIMO_DE_VIEWS:
-            continue
-        for dia, views in pontos:
-            if views >= total * alvo:
-                try:
-                    dias.append((datetime.strptime(dia, "%Y-%m-%d") - primeiro).days)
-                except (ValueError, TypeError):
-                    pass
-                break
-    return {"pronto": True, "dias": _mediana(dias), "amostra": len(dias)}
-
-
 # =========================================================================
-#  FUNCIONAM JÁ NA PRIMEIRA LEITURA
+#  MONETIZAÇÃO
 # =========================================================================
 
-def contra_a_mediana(videos, quantos=10):
-    """Cada vídeo comparado à mediana DELA, não a número genérico da internet.
+# As regras do Programa de Recompensas do Criador, como estão na Creator
+# Academy em 18/09/2026 (Brasil elegível): 10 mil seguidores, 100 mil views nos
+# últimos 30 dias, conteúdo com mais de 1 minuto, 18+, conta pessoal. Ficam num
+# dicionário e não espalhadas no código porque o TikTok muda isso sem avisar, e
+# a tela mostra os números ao lado do medido — número escondido no código
+# mentiria em silêncio quando a regra mudasse.
+#
+# `folga` é a margem abaixo da qual a pauta avisa: estar em 100.001 é estar
+# dentro hoje e fora amanhã.
+REGRAS = {"seguidores": 10000, "views_30d": 100000, "duracao_s": 60,
+          "janela_dias": 30, "folga": 1.5}
 
-    O app mostra "3.200 visualizações" e pronto. Ele não diz se 3.200 é bom para
-    esta conta. Conselho de internet ("o bom é 10% de engajamento") é sobre uma
-    conta média que não existe. A régua útil é a própria história dela.
-    """
-    vistos = [_n(v.get("view_count")) for v in videos]
-    med = _mediana(vistos)
-    if not med:
-        return {"mediana": None, "acima": [], "abaixo": []}
-    ordenados = sorted(videos, key=lambda v: -_n(v.get("view_count")))
-
-    def linha(v):
-        vw = _n(v.get("view_count"))
-        return dict(_identidade(v), id=v.get("id"), views=vw,
-                    vezes_a_mediana=round(vw / med, 2) if med else None)
-
-    return {"mediana": med, "amostra": len(videos),
-            "acima": [linha(v) for v in ordenados[:quantos]],
-            "abaixo": [linha(v) for v in ordenados[-quantos:][::-1]]}
+# Três faixas e não seis: a régua da monetização é 1 minuto, e a pergunta que
+# a faixa responde é "vale gravar mais longo?". Dividir mais fino do que a
+# pergunta pede só espalha a amostra.
+FAIXAS = [(0, 30, "até 30 s"), (30, 60, "31 a 60 s"), (60, 10 ** 6, "mais de 1 min")]
+FAIXA_LONGA = FAIXAS[-1][2]
 
 
-def taxa_de_compartilhamento(videos, quantos=10):
-    """Compartilhamentos por visualização, ranqueado.
-
-    O app só mostra o total bruto, onde o vídeo grande sempre ganha - e por isso
-    o ranking dele não ensina nada. A TAXA é diferente: é o sinal que mais anda
-    junto com alcance, porque compartilhar é o que leva o vídeo para fora da
-    audiência atual. Um vídeo pequeno com taxa alta é um vídeo que merecia mais
-    alcance do que teve.
-
-    O piso de %d views existe pra taxa não virar ruído: 1 compartilhamento em 12
-    views daria 8%%, e isso não é sinal de nada.
-    """ % MINIMO_DE_VIEWS
-    itens = []
-    for v in videos:
-        vw = _n(v.get("view_count"))
-        if vw < MINIMO_DE_VIEWS:
-            continue
-        itens.append(dict(_identidade(v), **{
-            "id": v.get("id"),
-            "views": vw,
-            "compartilhamentos": _n(v.get("share_count")),
-            "taxa": round(_n(v.get("share_count")) / vw * 100, 2),
-        }))
-    itens.sort(key=lambda x: -x["taxa"])
-    return {"itens": itens[:quantos], "amostra": len(itens),
-            "mediana": _mediana([i["taxa"] for i in itens])}
-
-
-def _agrupar(videos, chave, rotulo):
-    """Agrupa por uma chave e devolve a mediana de views de cada grupo."""
-    grupos = {}
-    for v in videos:
-        k = chave(v)
-        if k is None:
-            continue
-        grupos.setdefault(k, []).append(_n(v.get("view_count")))
-    fora = []
-    for k, vistos in grupos.items():
-        if len(vistos) < MINIMO_DE_VIDEOS:
-            continue      # grupo pequeno demais não vira conclusão
-        fora.append({"rotulo": rotulo(k), "chave": k,
-                     "mediana": _mediana(vistos), "videos": len(vistos)})
-    fora.sort(key=lambda x: -(x["mediana"] or 0))
-    return fora
-
-
-DIAS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
-
-
-def melhor_horario(videos):
-    """Hora e dia da semana que mais renderam, nos dados DELA.
-
-    O TikTok Studio mostra "melhor horário" para algumas contas e para outras
-    não, e quando mostra é baseado em quando a audiência está online - não em
-    quanto os vídeos dela renderam de fato. Aqui é a conta feita com a história
-    dela, e a tela diz de quantos vídeos cada faixa saiu.
-    """
-    por_hora = _agrupar(videos,
-                        lambda v: (_quando(v.get("create_time")).hour
-                                   if _quando(v.get("create_time")) else None),
-                        lambda h: "%02dh" % h)
-    por_dia = _agrupar(videos,
-                       lambda v: (_quando(v.get("create_time")).weekday()
-                                  if _quando(v.get("create_time")) else None),
-                       lambda d: DIAS[d])
-    return {"por_hora": por_hora, "por_dia": por_dia}
-
-
-FAIXAS = [(0, 15, "até 15s"), (15, 30, "15-30s"), (30, 45, "30-45s"),
-          (45, 60, "45-60s"), (60, 90, "60-90s"), (90, 10 ** 6, "mais de 90s")]
-
-
-def duracao_que_rende(videos):
-    """Faixa de duração × views. Responde "que tamanho funciona no meu perfil".
-
-    Pergunta que todo creator faz e que a internet responde com regra geral. A
-    resposta real muda de conta para conta, e só os dados dela sabem.
-    """
-    def faixa(v):
-        d = _n(v.get("duration"))
-        if not d:
-            return None
-        for de, ate, nome in FAIXAS:
-            if de <= d < ate:
-                return nome
+def _faixa(duracao):
+    d = _n(duracao)
+    if not d:
         return None
-    return _agrupar(videos, faixa, lambda x: x)
+    for de, ate, nome in FAIXAS:
+        if de < d <= ate:
+            return nome
+    return None
 
 
-def ritmo(videos):
-    """Publicações por semana contra as views daquela semana.
+def monetizacao(fotos, videos, serie=None, regras=REGRAS):
+    """Ela está dentro das regras de monetização, e por quanto?
 
-    Responde se postar mais está de fato trazendo mais - que é a decisão mais
-    cara da rotina dela (15-16 vídeos por dia). O app não cruza cadência com
-    resultado em lugar nenhum.
+    O app mostra o acumulado de cada vídeo e o total de seguidores. A regra
+    mede outra coisa: quantas views a conta GANHOU nos últimos 30 dias — e isso
+    só sai da série. É a mesma conta do "Acelerando", somada para a conta
+    inteira dentro da janela.
+
+    A CONTA DO GANHO, por vídeo: soma das diferenças entre leituras consecutivas
+    dentro da janela (`_ganhos_diarios`, que já zera negativo e já sabe que uma
+    leitura pulada estica o intervalo). Vídeo que NASCEU dentro da janela conta
+    também o número que já tinha na primeira leitura — aquelas views são desta
+    janela, só não foram vistas nascer. Vídeo que não veio numa leitura truncada
+    (05 e 06/09 trouxeram 1.478 e 958 dos 2.430) não perde nada: o intervalo
+    04→07 cobre os dias que faltaram.
+
+    ENQUANTO NÃO HÁ 30 DIAS DE LEITURA, o número é projetado (ganho × 30 ÷ dias
+    medidos) e a tela diz isso. Com 14 dias medidos a projeção é uma estimativa
+    honesta; com 2 dias ela mede um fim de semana e a tela tem que avisar.
+
+    SEGUIDORES SAEM `None`: o add-on ainda não pede o escopo `user.info.stats`
+    (fase 1). Mentir com o último número que ela viu no app seria pior do que
+    dizer que não foi lido.
     """
-    semanas = {}
-    for v in videos:
-        q = _quando(v.get("create_time"))
-        if not q:
+    janela = regras["janela_dias"]
+    fora = {"regras": regras, "janela_dias": janela, "pronto": False,
+            "seguidores": None, "seguidores_ok": None}
+    if len(fotos) < 2:
+        fora["faltam"] = 2 - len(fotos)
+        return fora
+
+    serie = serie if serie is not None else serie_por_video(fotos)
+    ate = fotos[-1].get("dia") or ""
+    try:
+        inicio_dt = datetime.strptime(ate, "%Y-%m-%d") - timedelta(days=janela)
+    except ValueError:
+        fora["faltam"] = 1
+        return fora
+    inicio = inicio_dt.strftime("%Y-%m-%d")
+    dias_com_foto = [f.get("dia") for f in fotos if (f.get("dia") or "") >= inicio]
+    if len(dias_com_foto) < 2:
+        fora["faltam"] = 2 - len(dias_com_foto)
+        return fora
+    desde = dias_com_foto[0]
+    dias_medidos = _dias_entre(desde, ate)
+
+    por_id = {v.get("id"): v for v in videos if v.get("id")}
+    ganho_por_video = {}
+    for vid, pontos in serie.items():
+        dentro = [p for p in pontos if (p[0] or "") >= inicio]
+        if not dentro:
             continue
-        iso = q.isocalendar()
-        chave = "%04d-S%02d" % (iso[0], iso[1])
-        alvo = semanas.setdefault(chave, {"semana": chave, "videos": 0, "views": 0.0})
-        alvo["videos"] += 1
-        alvo["views"] += _n(v.get("view_count"))
-    fora = sorted(semanas.values(), key=lambda x: x["semana"])
-    for s in fora:
-        s["views_por_video"] = round(s["views"] / s["videos"], 1) if s["videos"] else 0
+        g = sum(gn for _d, gn, _r in _ganhos_diarios(dentro))
+        v = por_id.get(vid) or {}
+        nasceu = _quando(v.get("create_time"))
+        if nasceu and nasceu >= inicio_dt:
+            g += dentro[0][1]
+        ganho_por_video[vid] = g
+
+    ganho = sum(ganho_por_video.values())
+    projetado = dias_medidos < janela
+    views_30d = (ganho * janela / dias_medidos) if projetado else ganho
+
+    por_faixa = {}
+    for vid, g in ganho_por_video.items():
+        nome = _faixa((por_id.get(vid) or {}).get("duration"))
+        if nome is not None:
+            por_faixa.setdefault(nome, []).append(g)
+    faixas = []
+    for _de, _ate, nome in FAIXAS:
+        gs = por_faixa.get(nome) or []
+        if len(gs) < MINIMO_DE_VIDEOS:
+            continue
+        faixas.append({"rotulo": nome, "videos": len(gs),
+                       "ganho": round(sum(gs)),
+                       "ganho_por_video": round(sum(gs) / len(gs)),
+                       "mediana_ganho": _mediana(gs)})
+    longos = [f for f in faixas if f["rotulo"] == FAIXA_LONGA]
+    curtos = [f for f in faixas if f["rotulo"] != FAIXA_LONGA]
+    longo_vs_curto = None
+    if longos and curtos:
+        base = sum(f["ganho"] for f in curtos) / float(sum(f["videos"] for f in curtos))
+        if base:
+            longo_vs_curto = round(longos[0]["ganho_por_video"] / base, 1)
+
+    publicados = [v for v in videos
+                  if (_quando(v.get("create_time")) or datetime.min) >= inicio_dt]
+    n_longos = sum(1 for v in publicados
+                   if _n(v.get("duration")) > regras["duracao_s"])
+    pct = round(n_longos * 100.0 / len(publicados), 1) if publicados else None
+
+    fora.update({
+        "pronto": True, "desde": desde, "ate": ate, "dias_medidos": dias_medidos,
+        "videos_medidos": len(ganho_por_video),
+        "views_ganhas": round(ganho), "views_30d": round(views_30d),
+        "projetado": projetado,
+        "views_ok": views_30d >= regras["views_30d"],
+        "views_vezes": round(views_30d / regras["views_30d"], 1),
+        "publicados": len(publicados), "longos": n_longos, "pct_longos": pct,
+        "faixas": faixas, "longo_vs_curto": longo_vs_curto,
+    })
     return fora
 
 
-def temas(videos, minimo=3, quantos=12, fatia=0.005):
-    """Que ASSUNTO rende mais, tirado do texto do título e da descrição.
-
-    POR QUE ISTO EXISTE. O pedido não era só ver o desempenho: era ter dado que
-    permita dizer **o que gravar amanhã**. Duração, horário e ritmo respondem
-    "como postar"; nenhum responde "sobre o quê". A única pista de assunto que a
-    Display API dá é o texto que ela mesma escreveu - e cruzado com as views ele
-    vira a pergunta certa: quais palavras aparecem nos vídeos que renderam.
-
-    A conta é a mediana das views dos vídeos que contêm a palavra, contra a
-    mediana geral. Palavra em menos de %d vídeos não entra: com um vídeo só, a
-    "palavra campeã" seria só o vídeo campeão de novo.
-
-    ISTO É PISTA, NÃO PROVA. Palavra que aparece junto de bom desempenho pode ser
-    causa ou coincidência - o assunto pode ter vindo junto de um áudio em alta,
-    de um horário melhor ou de sorte. Serve pra decidir o que TESTAR, não pra
-    concluir. A tela precisa dizer isso.
-    """ % minimo
-    # O PISO CRESCE COM A CONTA. Três vídeos bastavam quando a leitura trazia
-    # duzentos; sobre os 2.352 do catálogo, "palavra em 3 vídeos" é sorteio —
-    # o ranking encheu de "dele" (11,6x, 3 vídeos) e "focada" (11,4x, 3
-    # vídeos), que não são assunto de nada. Meio por cento da conta é o piso
-    # que devolve palavra com significado sem apagar a conta pequena, onde o
-    # mínimo de três continua valendo.
-    minimo = max(minimo, int(round(len(videos) * fatia)))
-    geral = _mediana([_n(v.get("view_count")) for v in videos])
-    if not geral:
-        return {"geral": None, "itens": []}
-
-    onde = {}
-    for v in videos:
-        texto = (v.get("title") or "") + " " + (v.get("video_description") or "")
-        for p in set(_palavras(texto)):
-            onde.setdefault(p, []).append(_n(v.get("view_count")))
-
-    itens = []
-    for palavra, vistos in onde.items():
-        if len(vistos) < minimo:
-            continue
-        med = _mediana(vistos)
-        itens.append({"palavra": palavra, "videos": len(vistos),
-                      "mediana": med,
-                      "vezes_a_geral": round(med / geral, 2) if geral else None})
-    itens.sort(key=lambda x: -(x["vezes_a_geral"] or 0))
-    return {"geral": geral, "amostra": len(videos), "minimo": minimo,
-            "itens": itens[:quantos],
-            "piores": itens[-quantos:][::-1] if len(itens) > quantos else []}
-
-
-def resumo_para_conselho(fotos, videos=None):
-    """Um texto curto com o que importa pra recomendar o próximo vídeo.
-
-    POR QUE EM TEXTO, e não só o JSON que a tela usa: o pedido foi que estes
-    dados sirvam **também para o Claude** dizer os próximos passos. Um resumo
-    denso e legível é o que cabe numa conversa sem despejar 80 KB de JSON, e é
-    o que sobrevive a ser colado num chat.
-
-    Só entra o que tem amostra suficiente. Linha sem dado é linha omitida - é
-    melhor um resumo curto e verdadeiro do que um completo e inventado.
-    """
-    videos = videos or ultimos_videos(fotos)
-    if not videos:
-        return "Ainda não há leitura da API do TikTok."
-
-    linhas = []
-    med = _mediana([_n(v.get("view_count")) for v in videos])
-    linhas.append("%d vídeos lidos, %d dia(s) de histórico. Mediana: %s views."
-                  % (len(videos), len(fotos),
-                     ("%.0f" % med) if med else "?"))
-
-    d = duracao_que_rende(videos)
-    if d:
-        # Só afirma "pior" quando existe com o que comparar. Com um grupo só, a
-        # frase saía "melhor 45-60s... pior 45-60s" - dizendo duas coisas
-        # opostas sobre a mesma faixa, que é pior do que não dizer nada.
-        linha = ("Duração que mais rende: %s (mediana %.0f, em %d vídeos)."
-                 % (d[0]["rotulo"], d[0]["mediana"], d[0]["videos"]))
-        if len(d) > 1:
-            linha += " Pior: %s (%.0f)." % (d[-1]["rotulo"], d[-1]["mediana"])
-        else:
-            linha += " É a única faixa com vídeos suficientes pra comparar."
-        linhas.append(linha)
-
-    h = melhor_horario(videos)
-    if h["por_hora"]:
-        linhas.append("Melhor horário: %s (mediana %.0f, %d vídeos)."
-                      % (h["por_hora"][0]["rotulo"], h["por_hora"][0]["mediana"],
-                         h["por_hora"][0]["videos"]))
-    if h["por_dia"]:
-        linhas.append("Melhor dia: %s (mediana %.0f, %d vídeos)."
-                      % (h["por_dia"][0]["rotulo"], h["por_dia"][0]["mediana"],
-                         h["por_dia"][0]["videos"]))
-
-    # HASHTAG NO LUGAR DA PALAVRA SOLTA: é o assunto rotulado por ela, dá para
-    # pesquisar no TikTok e dá para repetir. Palavra solta continua no painel
-    # da tela, onde há espaço para explicar o que ela é.
-    ht = conteudo.hashtags(videos)
-    if ht["itens"]:
-        top = ", ".join("%s (%.1fx, %d víd.)" % (i["termo"], i["vezes_a_geral"], i["videos"])
-                        for i in ht["itens"][:5])
-        linhas.append("Hashtags acima da mediana: " + top +
-                      " — pista para testar, não prova.")
-
-    c = taxa_de_compartilhamento(videos)
-    if c["itens"]:
-        linhas.append("Mais compartilhado por view: \"%s\" (%.2f%%). Mediana: %.2f%%."
-                      % (c["itens"][0]["titulo"], c["itens"][0]["taxa"],
-                         c["mediana"] or 0))
-
-    a = acelerando(fotos)
-    if a["pronto"] and a["itens"] and a["itens"][0]["ganho_ultimo"] > 0:
-        linhas.append("Crescendo agora: \"%s\" (+%.0f views na última leitura)."
-                      % (a["itens"][0]["titulo"], a["itens"][0]["ganho_ultimo"]))
-    r = ressurreicoes(fotos)
-    if r["pronto"] and r["itens"]:
-        linhas.append("RESSUSCITOU: \"%s\", %d dias de idade, +%.0f views."
-                      % (r["itens"][0]["titulo"], r["itens"][0]["idade_dias"],
-                         r["itens"][0]["ganho_ultimo"]))
-    mv = meia_vida(fotos)
-    if mv["pronto"] and mv["dias"] is not None:
-        linhas.append("Meia-vida: %.0f dia(s) para juntar 80%% das views (%d vídeos)."
-                      % (mv["dias"], mv["amostra"]))
-
-    # A PAUTA FECHA O RESUMO. O resto do texto descreve; estas linhas mandam
-    # fazer. Vêm por último de propósito: quem lê de cima para baixo chega
-    # nelas já sabendo de onde saíram, e quem lê só o fim leva o que interessa.
-    pt = conteudo.pauta(videos, fotos)
-    if pt["itens"]:
-        linhas.append("")
-        linhas.append("O QUE FAZER AMANHÃ:")
-        for i in pt["itens"]:
-            linhas.append("  %s: %s" % (i["acao"], i["texto"]))
-    return "\n".join(linhas)
-
+# =========================================================================
+#  TUDO, E DE ONDE A TELA LÊ
+# =========================================================================
 
 def tudo(fotos, videos=None):
     """Todos os painéis numa chamada só.
@@ -502,15 +353,15 @@ def tudo(fotos, videos=None):
 
     A DIVISÃO QUE IMPORTA, e o motivo de o parâmetro existir:
 
-      - **Retrato** (mediana, assuntos, horário, duração, ritmo, e tudo que
-        `conteudo.py` faz): sai do catálogo. São perguntas sobre COMO É A CONTA
+      - **Retrato** (refazer, parcerias, e a contagem de publicados da
+        monetização): sai do catálogo. São perguntas sobre COMO É A CONTA
         DELA, e responder isso com a leitura de hoje — que em 06/09 trouxe 958
         dos 2.352 vídeos — descreve os últimos três meses fingindo ser a conta
         toda. Foi assim que o vídeo de 2,1 milhão sumiu da tela.
-      - **Trajetória** (acelerando, ressuscitou, meia-vida, largada): sai das
-        fotografias, cruas. São perguntas sobre O QUE MUDOU, e para isso só
-        vale leitura de verdade — misturar o número de anteontem inventaria
-        ganho que não houve.
+      - **Trajetória** (acelerando, ressuscitou, largada, e o ganho da
+        monetização): sai das fotografias, cruas. São perguntas sobre O QUE
+        MUDOU, e para isso só vale leitura de verdade — misturar o número de
+        anteontem inventaria ganho que não houve.
     """
     videos = videos or ultimos_videos(fotos)
     # QUEM É CADA VÍDEO, num mapa. Os painéis de trajetória saem das
@@ -518,67 +369,51 @@ def tudo(fotos, videos=None):
     # painel "Acelerando" - o mais urgente da tela - seria o único mostrando
     # vídeo sem imagem e sem link.
     por_id = {v.get("id"): v for v in videos if v.get("id")}
-    d = {
+    serie = serie_por_video(fotos)
+
+    lg = conteudo.largada(fotos, por_id=por_id)
+    rf = conteudo.refazer(videos)
+    mn = monetizacao(fotos, videos, serie=serie)
+    return {
         "dias_de_historico": len(fotos),
         "videos": len(videos),
-        "acelerando": acelerando(fotos, por_id=por_id),
-        "ressurreicoes": ressurreicoes(fotos, por_id=por_id),
-        "meia_vida": meia_vida(fotos),
-        "contra_a_mediana": contra_a_mediana(videos),
-        "compartilhamento": taxa_de_compartilhamento(videos),
-        "horario": melhor_horario(videos),
-        "duracao": duracao_que_rende(videos),
-        "ritmo": ritmo(videos),
-        "temas": temas(videos),
-        "resumo": resumo_para_conselho(fotos, videos),
+        # A ORDEM AQUI NÃO É A DA TELA (o dashboard.html decide), mas a pauta
+        # vem primeiro por ser o único painel que sai dos outros.
+        "pauta": conteudo.pauta(lg, rf, mn),
+        "monetizacao": mn,
+        "largada": lg,
+        "acelerando": acelerando(fotos, por_id=por_id, serie=serie),
+        "ressurreicoes": ressurreicoes(fotos, por_id=por_id, serie=serie),
+        "refazer": rf,
+        "parcerias": conteudo.parcerias(videos),
     }
-    d.update(conteudo.tudo(videos, fotos, por_id=por_id))
-    return d
 
 
-def painel_de_desempenho(tk, conta=None, estado=None):
-    """Os dashboards da API do TikTok. Uma resposta só.
+def escolher(tk, conta=None):
+    """Qual perfil vai para a tela: (open_id ou None, erro ou None).
 
-    Sai das FOTOGRAFIAS diárias, não de uma chamada à API: a série de tempo é o
-    que dá valor a quase tudo aqui, e ela só existe porque alguém guardou as
-    leituras. Abrir a tela não dispara chamada ao TikTok.
-
-    MORA AQUI, E NÃO NO painel.py, porque o servidor do Raspberry precisa da
-    mesma resposta e o painel.py não vai para lá (quase 3.000 linhas presas a ffmpeg).
-
-    `tk` é o módulo tiktok, e `estado` é uma função sem argumentos: o painel
-    informa se a tarefa agendada do Windows existe, e o add-on informa outra
-    coisa. Este arquivo não pode passar a saber o que é agendador do Windows.
+    A tela manda o open_id escolhido; sem ele, o primeiro conectado. Perfil
+    pedido que não existe mais (ela desconectou noutra aba) cai no primeiro em
+    vez de dar erro — tela vazia com mensagem técnica é pior que tela certa do
+    perfil vizinho, que ela reconhece na hora.
     """
-    def _estado():
-        # O estado é o enfeite ao lado do número; o número é o que ela veio ver.
-        # Um agendador indisponível não pode esvaziar a tela inteira.
-        try:
-            return estado() if estado else {}
-        except Exception:
-            return {}
-
     try:
         lista = tk.contas()
     except Exception as e:
-        return {"ok": False, "erro": str(e)}
-
-    # QUAL PERFIL. A tela manda o open_id escolhido; sem ele, o primeiro
-    # conectado. Perfil pedido que não existe mais (ela desconectou noutra aba)
-    # cai no primeiro em vez de dar erro — tela vazia com mensagem técnica é
-    # pior que tela certa do perfil vizinho, que ela reconhece na hora.
+        return None, str(e)
     ids = [c["open_id"] for c in lista]
-    escolhida = conta if conta in ids else (ids[0] if ids else None)
-    if escolhida is None:
-        return {"ok": True, "tem_dados": False, "conta": None, "tiktok": _estado()}
+    return (conta if conta in ids else (ids[0] if ids else None)), None
 
-    try:
-        fotos = tk.fotos(escolhida)
-    except Exception as e:
-        return {"ok": False, "erro": str(e)}
+
+def calcular(tk, escolhida):
+    """Os painéis de UM perfil, lidos do disco. É a parte cara.
+
+    Devolve {"tem_dados": False} quando o perfil não tem fotografia nenhuma.
+    Levanta se o disco falhar — quem chama decide o que fazer com isso.
+    """
+    fotos = tk.fotos(escolhida)
     if not fotos:
-        return {"ok": True, "tem_dados": False, "conta": escolhida,
-                "tiktok": _estado()}
+        return {"tem_dados": False}
 
     # O CATÁLOGO, e o quanto a última leitura cobriu dele. Se falhar, a tela
     # continua de pé com a última fotografia — que é o comportamento antigo,
@@ -592,13 +427,49 @@ def painel_de_desempenho(tk, conta=None, estado=None):
     except Exception:
         catalogados, cobertura = None, None
 
+    d = tudo(fotos, catalogados)
+    d["cobertura"] = cobertura
+    d["tem_dados"] = True
+    return d
+
+
+def estado_de(estado):
+    """O estado é o enfeite ao lado do número; o número é o que ela veio ver.
+    Um agendador indisponível não pode esvaziar a tela inteira."""
     try:
-        d = tudo(fotos, catalogados)
+        return estado() if estado else {}
+    except Exception:
+        return {}
+
+
+def painel_de_desempenho(tk, conta=None, estado=None):
+    """Os dashboards da API do TikTok. Uma resposta só, calculada agora.
+
+    Sai das FOTOGRAFIAS diárias, não de uma chamada à API: a série de tempo é o
+    que dá valor a quase tudo aqui, e ela só existe porque alguém guardou as
+    leituras. Abrir a tela não dispara chamada ao TikTok.
+
+    MORA AQUI, E NÃO NO painel.py, porque o servidor do Raspberry precisa da
+    mesma resposta e o painel.py não vai para lá (quase 3.000 linhas presas a
+    ffmpeg). O servidor do Raspberry, por sua vez, NÃO chama isto ao abrir a
+    tela: ele lê o resultado gravado por `pronto.py`, que chama `calcular` uma
+    vez por dia. Esta função continua existindo para o painel.py do computador.
+
+    `tk` é o módulo tiktok, e `estado` é uma função sem argumentos: o painel
+    informa se a tarefa agendada do Windows existe, e o add-on informa outra
+    coisa. Este arquivo não pode passar a saber o que é agendador do Windows.
+    """
+    escolhida, erro = escolher(tk, conta)
+    if erro:
+        return {"ok": False, "erro": erro}
+    if escolhida is None:
+        return {"ok": True, "tem_dados": False, "conta": None,
+                "tiktok": estado_de(estado)}
+    try:
+        d = calcular(tk, escolhida)
     except Exception as e:
         return {"ok": False, "erro": str(e)}
-    d["cobertura"] = cobertura
     d["ok"] = True
-    d["tem_dados"] = True
     d["conta"] = escolhida
-    d["tiktok"] = _estado()
+    d["tiktok"] = estado_de(estado)
     return d
