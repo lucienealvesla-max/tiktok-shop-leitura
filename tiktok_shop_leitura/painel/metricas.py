@@ -218,7 +218,25 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None,
 # `folga` é a margem abaixo da qual a pauta avisa: estar em 100.001 é estar
 # dentro hoje e fora amanhã.
 REGRAS = {"seguidores": 10000, "views_30d": 100000, "duracao_s": 60,
-          "janela_dias": 30, "folga": 1.5}
+          "janela_dias": 30, "folga": 1.5,
+          # O que o programa NÃO paga (Creator Academy, "Creator Rewards
+          # Program Guide"): "Sponsored, TikTok One, Shop, Duet, Stitch, and
+          # Photo Mode content are excluded". Vídeo com link de produto ganha
+          # COMISSÃO, não recompensa — são duas receitas com regras diferentes.
+          "excluidos": "patrocinado, TikTok One, Shop (link de produto), Duet, Stitch, modo foto",
+          "views_minimas_por_video": 1000}
+
+# COMO SE RECONHECE VÍDEO DE LOJA pelo que a Display API entrega: a API não
+# diz se há âncora de produto, mas ela marca todo vídeo de loja com
+# `#tiktokshopbr…` (1.661 dos 2.445 no catálogo, 240 dos 252 do último mês).
+# É proxy, e a tela diz que é.
+import re as _re
+_TAG_DE_LOJA = _re.compile(r"#tiktokshop", _re.I)
+
+
+def _de_loja(v):
+    return bool(_TAG_DE_LOJA.search((v.get("video_description") or "") + " " +
+                                    (v.get("title") or "")))
 
 # Três faixas e não seis: a régua da monetização é 1 minuto, e a pergunta que
 # a faixa responde é "vale gravar mais longo?". Dividir mais fino do que a
@@ -362,6 +380,24 @@ def monetizacao(fotos, videos, serie=None, regras=REGRAS):
     n_longos = sum(1 for v in publicados
                    if _n(v.get("duration")) > regras["duracao_s"])
     pct = round(n_longos * 100.0 / len(publicados), 1) if publicados else None
+
+    # AS DUAS RECEITAS, separadas. Vídeo de loja (com link) ganha comissão e
+    # está EXCLUÍDO das recompensas; vídeo sem link, acima de 1 minuto, é o
+    # único que o Programa de Recompensas paga. Medido em 19/09/2026: 240 dos
+    # 252 vídeos do mês eram de loja, e ZERO eram sem link e longos — a conta
+    # batia seguidores e views e não tinha um vídeo elegível sequer.
+    de_loja = [v for v in publicados if _de_loja(v)]
+    sem_loja = [v for v in publicados if not _de_loja(v)]
+    elegiveis = [v for v in sem_loja if _n(v.get("duration")) > regras["duracao_s"]]
+    ganho_loja = sum(ganho_por_video.get(v.get("id"), 0) for v in videos if _de_loja(v))
+    ganho_sem_loja = round(ganho - ganho_loja)
+
+    fora.update({
+        "publicados_loja": len(de_loja), "publicados_sem_loja": len(sem_loja),
+        "elegiveis_recompensa": len(elegiveis),
+        "views_ganhas_loja": round(ganho_loja), "views_ganhas_sem_loja": ganho_sem_loja,
+        "pct_views_loja": round(ganho_loja * 100.0 / ganho, 1) if ganho else None,
+    })
 
     fora.update({
         "pronto": True, "desde": desde, "ate": ate, "dias_medidos": dias_medidos,

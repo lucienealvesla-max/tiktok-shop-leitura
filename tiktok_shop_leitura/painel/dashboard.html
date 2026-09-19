@@ -282,11 +282,12 @@ function painelMonetizacao(m){
           (m.seguidores_dias === 1 ? ' · primeira leitura; o ritmo aparece amanhã' : '')) +
       '</div>' +
     '</div>' +
-    '<div class="kpi ' + (m.pct_longos == null ? "vazio" : (m.pct_longos >= 50 ? "ok" : "ruim")) + '">' +
-      '<div class="numerao">' + (m.pct_longos == null ? "—" : n(m.pct_longos, 0) + '%') + '</div>' +
-      '<div class="rotulo">passam de 1 min</div>' +
-      '<div class="sub">' + n(m.longos) + ' de ' + n(m.publicados) + ' publicados nos últimos ' +
-        (m.janela_dias || 30) + ' dias — só esses contam</div>' +
+    '<div class="kpi ' + (m.elegiveis_recompensa == null ? "vazio" : (m.elegiveis_recompensa > 0 ? "ok" : "ruim")) + '">' +
+      '<div class="numerao">' + (m.elegiveis_recompensa == null ? "—" : n(m.elegiveis_recompensa)) + '</div>' +
+      '<div class="rotulo">vídeos elegíveis a recompensa</div>' +
+      '<div class="sub">sem link de loja e acima de 1 min, dos ' + n(m.publicados) + ' dos últimos ' +
+        (m.janela_dias || 30) + ' dias · ' + n(m.publicados_loja) + ' têm link (comissão, não recompensa)' +
+        (m.pct_longos != null ? ' · ' + n(m.pct_longos, 0) + '% passam de 1 min' : '') + '</div>' +
     '</div>' +
     '<div class="kpi ' + (m.longo_vs_curto == null ? "vazio" : (m.longo_vs_curto >= 1.5 ? "ok" : "")) + '">' +
       '<div class="numerao">' + (m.longo_vs_curto == null ? "—" : n(m.longo_vs_curto, 1) + 'x') + '</div>' +
@@ -297,8 +298,16 @@ function painelMonetizacao(m){
     '<div class="sub">Programa de Recompensas do Criador: <b>' + n(r.seguidores) +
     ' seguidores</b>, <b>' + n(r.views_30d) + ' views nos últimos 30 dias</b> e vídeo ' +
     'de <b>mais de 1 minuto</b>. O app mostra o acumulado de cada vídeo; a regra mede o ' +
-    'que a conta <b>ganhou no período</b> — e isso só sai da série de leituras.</div>' +
-    '<div class="kpis">' + kpis + '</div>';
+    'que a conta <b>ganhou no período</b> — e isso só sai da série de leituras. ' +
+    '<b>Vídeo com link de loja não recebe recompensa</b> (excluídos: ' + esc(r.excluidos || 'Shop') +
+    '); ele ganha comissão, que é o painel de Vendas. Duas receitas, duas regras.</div>' +
+    '<div class="kpis">' + kpis + '</div>' +
+    (m.pct_views_loja != null
+      ? '<div class="sub">Das views ganhas no período, <b>' + n(m.pct_views_loja, 0) +
+        '%</b> vieram de vídeos com link de loja (' + n(m.views_ganhas_loja) + ' contra ' +
+        n(m.views_ganhas_sem_loja) + '). Vídeo de loja é reconhecido pela <code>#tiktokshop</code> ' +
+        'na descrição — é aproximação, a API não diz se há produto ancorado.</div>'
+      : '');
   if((m.faixas || []).length){
     h += '<div class="rotulo" style="margin-top:14px">Views novas por vídeo, por duração</div>' +
       barras(m.faixas.map(function(f){

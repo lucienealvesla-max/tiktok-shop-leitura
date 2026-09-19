@@ -167,10 +167,20 @@ completar 30 dias de leitura o número é projetado e a tela diz isso),
 `user.info.stats`, com o ganho desde a leitura anterior e em 7 dias — e, se a
 conta ainda não tiver o escopo, a tela diz isso em vez de mostrar um número
 velho) e
-**quantos dos vídeos publicados no período passam de 1 minuto** — só esses
-contam. Embaixo, quantas views novas cada faixa de duração ganhou por vídeo:
-medido nos dados dela, o vídeo de mais de 1 minuto ganhava **de 5 a 7 vezes**
-mais que o curto, e só 16% do que ela postava passava de 1 minuto.
+**quantos vídeos do período são elegíveis** — sem link de loja e acima de 1
+minuto. **Vídeo com link de produto não recebe recompensa**: a Creator Academy
+lista "Sponsored, TikTok One, Shop, Duet, Stitch, and Photo Mode" como
+excluídos. Ele ganha comissão, que é o painel de Vendas — duas receitas, duas
+regras. Medido em 19/09/2026: 240 dos 252 vídeos do mês tinham link, e zero
+eram sem link e longos; a conta batia seguidores e views e não tinha um vídeo
+elegível. O painel diz isso em vez de fingir que a regra de 1 minuto vale para
+o que ela grava. Vídeo de loja é reconhecido pela `#tiktokshop` na descrição
+(aproximação: a API não diz se há produto ancorado).
+
+Embaixo, quantas views novas cada faixa de duração ganhou por vídeo: medido
+nos dados dela, o vídeo de mais de 1 minuto ganhava **de 5 a 7 vezes** mais
+que o curto — e em vídeo de loja, view é clique no produto. É por isso que
+"grave mais longo" continua na pauta, agora com o motivo certo.
 
 **Largada** — quanto o vídeo fez nas primeiras horas, comparado com os outros da
 **mesma idade**. Reagir a um vídeo que está subindo só vale enquanto ele sobe —

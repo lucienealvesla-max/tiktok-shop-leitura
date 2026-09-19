@@ -300,19 +300,34 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
     if m.get("pronto"):
         regras = m.get("regras") or {}
         pct = m.get("pct_longos")
-        if pct is not None and pct < 50:
-            texto = ("Só %s%% dos %d vídeos publicados nos últimos %d dias passam de "
-                     "1 minuto, e só esses contam no Programa de Recompensas."
-                     % (("%.0f" % pct), m.get("publicados") or 0,
-                        m.get("janela_dias") or 30))
-            if m.get("longo_vs_curto"):
-                texto += (" Neste período o vídeo longo ganhou %sx mais views "
-                          "novas por vídeo do que o curto." % m["longo_vs_curto"])
+        # GRAVE MAIS LONGO vale pela AUDIÊNCIA, não pelo programa: vídeo de
+        # loja não ganha recompensa de jeito nenhum, mas o longo ganha 5 a 7x
+        # mais views novas — e views em vídeo de loja viram clique e comissão.
+        if pct is not None and pct < 50 and m.get("longo_vs_curto"):
             linhas.append({
                 "acao": "GRAVE MAIS LONGO",
-                "texto": texto,
+                "texto": "Só %s%% dos %d vídeos dos últimos %d dias passam de 1 minuto, e "
+                         "neste período o vídeo longo ganhou %sx mais views novas por vídeo "
+                         "do que o curto. Em vídeo de loja, view é clique no produto."
+                         % (("%.0f" % pct), m.get("publicados") or 0,
+                            m.get("janela_dias") or 30, m["longo_vs_curto"]),
                 "de_onde": "monetização: %d vídeos medidos em %d dia(s)"
                            % (m.get("videos_medidos") or 0, m.get("dias_medidos") or 0),
+            })
+        # RECOMPENSAS: a conta pode bater seguidores e views e não ter UM vídeo
+        # que o programa pague. Dizer isso é mais útil do que fingir que a
+        # regra de 1 minuto se aplica ao que ela grava.
+        if m.get("publicados") and m.get("elegiveis_recompensa") == 0:
+            linhas.append({
+                "acao": "RECOMPENSAS: NADA ELEGÍVEL",
+                "texto": "Nenhum dos %d vídeos dos últimos %d dias é pago pelo Programa de "
+                         "Recompensas: %d têm link de loja (excluídos pela regra) e os %d sem "
+                         "link não passam de 1 minuto. A receita desta conta é comissão — a "
+                         "régua está no painel de Vendas. Recompensa só entraria com uma "
+                         "linha à parte de vídeos sem produto, longos e originais."
+                         % (m.get("publicados") or 0, m.get("janela_dias") or 30,
+                            m.get("publicados_loja") or 0, m.get("publicados_sem_loja") or 0),
+                "de_onde": "vídeo de loja reconhecido pela #tiktokshop na descrição (proxy)",
             })
         vezes = m.get("views_vezes")
         folga = regras.get("folga") or 1.5
