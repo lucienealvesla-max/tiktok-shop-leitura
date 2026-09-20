@@ -36,6 +36,35 @@ conectada. O log avisa o que está faltando, em vez de falhar em silêncio.
   dia", que o app não tem. Precisa do escopo `user.info.stats` — veja abaixo.
 - **Serve o dashboard** pela barra lateral (marque "Mostrar na barra lateral").
 
+## Plano de gravação, aceleração por produto e roteiro por IA (1.8.0)
+
+Três painéis que a Owra vende e cabem aqui com o dado que já existe:
+
+**Plano de gravação de hoje** — quantos vídeos gravar e de que tipo. O tamanho
+é a **sua cadência** (mediana de vídeos por dia no mês; em 19/09/2026, 8), não
+um número de manual. Metade em campeões (produtos que vendem), um quarto em
+apostas (parte 2 do que largou bem), um ou dois para refazer, o resto em
+novo — produto ainda não testado, porque sem isso a conta para de descobrir.
+Sem relatório de vendas, os campeões viram "novo" e a lista diz por quê.
+
+**Produtos acelerando / comissão mudou** — dentro do painel de Vendas, quando
+há **duas semanas** de linhas na pasta: pedidos desta semana contra a
+anterior por produto (acelerando = pelo menos 2 pedidos e 1,5× a anterior),
+e comissão por pedido que mudou 15% ou mais. Os dois entram na pauta
+("PRODUTO ACELERANDO", "COMISSÃO MUDOU").
+
+**Roteiro pronto para gravar** — pelo agente de IA que o Home Assistant já
+tem. Na configuração do add-on, `agente_ia` recebe o id do agente (ex.:
+`conversation.google_ai_conversation`; veja em Ferramentas de desenvolvedor →
+Estados → `conversation.`). Depois da leitura da 1h o add-on pede, para até
+**três** vídeos apontados pela pauta (EMPURRE HOJE, REFAÇA, EMPURRE O QUE
+VENDE), três ganchos, um roteiro de 60–90 s em cinco blocos e um título — com
+o que se sabe do vídeo. O que o texto do vídeo não diz (material, prova,
+preço) vira lacuna entre colchetes para ela preencher, não invenção. O texto
+vai para `<conta>/roteiros.json` e aparece dobrado sob a linha da pauta
+("Roteiro pronto"). Vídeo com roteiro dos últimos 7 dias não gasta outra
+chamada. Para testar sem esperar: `python3 /app/painel/roteiro.py gerar`.
+
 ## O resumo do dia no celular
 
 Desde a 1.7.0 o add-on manda, **uma vez por dia**, um resumo pelo Home

@@ -239,4 +239,13 @@ def desempenho(tk, conta=None, estado=None):
     d["ok"] = True
     d["conta"] = escolhida
     d["tiktok"] = metricas.estado_de(estado)
+    # Os roteiros de IA (fase C.4) moram fora do painel calculado: são
+    # gerados depois dele, por outro caminho, e um arquivo pequeno. Ler aqui
+    # é barato e não mexe na chave do cache.
+    try:
+        import roteiro
+        d["roteiros"] = roteiro.ler(tk, escolhida)
+        d["tiktok"]["agente_ia"] = roteiro.agente() or None
+    except Exception:
+        d["roteiros"] = {}
     return d

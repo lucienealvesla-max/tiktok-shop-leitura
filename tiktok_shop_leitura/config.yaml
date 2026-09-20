@@ -1,5 +1,5 @@
 name: Leitura TikTok Shop
-version: "1.7.0"
+version: "1.8.0"
 slug: tiktok_shop_leitura
 # Link que aparece na pagina do add-on, no Home Assistant.
 url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
@@ -31,17 +31,22 @@ homeassistant_api: true
 # notificacao do Home Assistant (ex.: notify.mobile_app_sm_s928b); vazia,
 # nao avisa. `hora_do_aviso` e' quando o resumo sai - 8h por padrao, e nao a
 # hora da leitura, porque ninguem quer push a 1h da manha.
+# O ROTEIRO POR IA (fase C.4): `agente_ia` e' o agente de conversa do Home
+# Assistant (ex.: conversation.google_ai_conversation). Vazio = desligado.
+# Tres roteiros por dia, para os videos da pauta, depois da leitura da 1h.
 options:
   hora_da_leitura: 1
   hora_do_aviso: 8
   avisar: []
   meta_mensal: 0
+  agente_ia: ""
 schema:
   hora_da_leitura: int(0,23)
   hora_do_aviso: int(0,23)
   avisar:
     - str
   meta_mensal: float(0,)
+  agente_ia: str?
 
 # Se o processo morrer, o HA sobe de novo: um relogio parado nao avisa que
 # parou, e cada dia sem leitura e um buraco.

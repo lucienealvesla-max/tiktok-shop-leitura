@@ -254,6 +254,82 @@ def largada(fotos, janela_horas=48, recentes=8, faixa_horas=12, por_id=None):
             "janela_horas": janela_horas, "itens": itens[:recentes]}
 
 
+# ------------------------------------------------------------ o plano do dia
+
+def plano_do_dia(vendas_, largada_, refazer_, cadencia=None):
+    """A lista de gravação de hoje: quantos vídeos, e de que tipo cada um.
+
+    POR QUE ISTO EXISTE (fase C.3). A pauta diz o que fazer; o plano diz
+    quanto de cada coisa cabe no dia. A Owra chama de "campeões × apostas".
+    O tamanho é a cadência DELA (mediana de vídeos por dia no mês), não um
+    número de manual: uma lista de 15 num dia de 8 é lista que não se cumpre.
+
+    A DIVISÃO: metade em campeões (produtos que vendem — só existem com
+    relatório de vendas), um quarto em apostas (vídeos que largaram bem:
+    parte 2 enquanto sobe), um ou dois refazer, e o resto em novo (produto
+    que ainda não foi testado — sem isso a conta para de descobrir). Sem
+    vendas na pasta, os campeões viram "novo" e a lista diz por quê.
+    """
+    n = max(3, min(12, int(cadencia or 6)))
+    itens = []
+    vd = vendas_ or {}
+    lg = largada_ or {}
+    rf = refazer_ or {}
+
+    # CAMPEÕES: os produtos que mais pagaram (acelerando primeiro).
+    campeoes = []
+    vistos = set()
+    for x in (vd.get("produtos_acelerando") or []):
+        if x["produto"] not in vistos:
+            vistos.add(x["produto"])
+            campeoes.append(("acelerando", x["produto"],
+                             "%d pedido(s) nesta semana, %sx a anterior" % (x["pedidos_semana"], x["vezes"])))
+    for x in (vd.get("por_produto") or []):
+        if x["produto"] not in vistos and (x.get("comissao") or 0) > 0:
+            vistos.add(x["produto"])
+            campeoes.append(("campeão", x["produto"],
+                             "R$ %s em %d pedido(s) nos últimos 30 dias"
+                             % (("%.2f" % x["comissao"]).replace(".", ","), x["pedidos"])))
+    vagas_campeoes = (n + 1) // 2
+    for tipo, produto, motivo in campeoes[:vagas_campeoes]:
+        itens.append({"tipo": tipo, "texto": "Outro corte de %s" % produto, "motivo": motivo})
+
+    # APOSTAS: parte 2 do que largou acima do normal.
+    subindo = sorted([i for i in (lg.get("itens") or []) if (i.get("vezes_a_largada") or 0) >= 1.5],
+                     key=lambda i: -i["vezes_a_largada"])
+    vagas_apostas = max(1, n // 4)
+    for i in subindo[:vagas_apostas]:
+        itens.append({"tipo": "aposta", "id": i.get("id"), "link": i.get("link"),
+                      "texto": "Parte 2 de \"%s\"" % i.get("titulo"),
+                      "motivo": "largou %sx acima do normal (%s views em %sh)"
+                                % (i["vezes_a_largada"], "%.0f" % i["views"], i["horas"])})
+
+    # REFAZER: um ou dois, sem repetir título.
+    vistos_t, refazer = set(), []
+    for i in rf.get("itens") or []:
+        t = (i.get("titulo") or "").strip().lower()
+        if t and t not in vistos_t:
+            vistos_t.add(t)
+            refazer.append(i)
+    for i in refazer[:max(1, n // 6)]:
+        itens.append({"tipo": "refazer", "id": i.get("id"), "link": i.get("link"),
+                      "texto": "Refazer \"%s\" com outra capa e outro gancho" % i.get("titulo"),
+                      "motivo": "%s (%sx a sua mediana)" % (i.get("motivo"), i.get("forca"))})
+
+    # NOVO: o que sobrar. É onde a conta descobre o próximo campeão.
+    novos = max(0, n - len(itens))
+    for _ in range(novos):
+        itens.append({"tipo": "novo", "texto": "Produto ainda não testado",
+                      "motivo": "um por dia mantém a descoberta viva"})
+
+    return {"quantos": n, "cadencia": cadencia, "itens": itens[:n],
+            "sem_vendas": not bool(vd.get("tem_dados")),
+            "campeoes": sum(1 for i in itens if i["tipo"] in ("campeão", "acelerando")),
+            "apostas": sum(1 for i in itens if i["tipo"] == "aposta"),
+            "refazer": sum(1 for i in itens if i["tipo"] == "refazer"),
+            "novos": sum(1 for i in itens if i["tipo"] == "novo")}
+
+
 # ------------------------------------------------------------------- a pauta
 
 def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
@@ -356,6 +432,7 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
         if top:
             linhas.append({
                 "acao": "EMPURRE O QUE VENDE",
+                "id": top.get("id"),
                 "link": top.get("link"), "capa": top.get("capa"),
                 "texto": '"%s" rendeu R$ %s de comissão em %d pedido(s) nos últimos 30 dias%s. '
                          "Fixe o comentário com o link, responda quem pergunta preço, e grave "
@@ -364,6 +441,30 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
                             top.get("pedidos") or 0,
                             (" (último pedido em %s)" % top["ultimo_pedido"]) if top.get("ultimo_pedido") else ""),
                 "de_onde": "vendas: %d vídeo(s) com pedido no período" % (vd.get("videos_com_venda") or 0),
+            })
+        # PRODUTO ACELERANDO e COMISSÃO MUDOU (fase C.2): decisão de amanhã
+        # de manhã nos dois casos — gravar mais do que está subindo; parar
+        # de empurrar o que passou a pagar menos.
+        for x in (vd.get("produtos_acelerando") or [])[:2]:
+            linhas.append({
+                "acao": "PRODUTO ACELERANDO",
+                "texto": "%s: %d pedido(s) nesta semana contra %d na anterior (%sx), R$ %s de "
+                         "comissão. Grave outro corte enquanto está subindo."
+                         % (x["produto"], x["pedidos_semana"], x["pedidos_anterior"],
+                            x["vezes"], ("%.2f" % x["comissao_semana"]).replace(".", ",")),
+                "de_onde": "vendas: semana × semana anterior",
+            })
+        for x in (vd.get("comissao_mudou") or [])[:1]:
+            linhas.append({
+                "acao": "COMISSÃO MUDOU",
+                "texto": "%s paga R$ %s por pedido agora, contra R$ %s na semana anterior "
+                         "(%s%s%%). %s"
+                         % (x["produto"], ("%.2f" % x["por_pedido_agora"]).replace(".", ","),
+                            ("%.2f" % x["por_pedido_antes"]).replace(".", ","),
+                            "+" if x["variacao_pct"] >= 0 else "", x["variacao_pct"],
+                            "Vale mais cada vídeo dele." if x["variacao_pct"] >= 0
+                            else "Confira a taxa na Central antes de gravar mais."),
+                "de_onde": "vendas: comissão por pedido, semana × anterior",
             })
         sem = vd.get("sem_video") or {}
         if (sem.get("pedidos") or 0) > 0 and not (vd.get("por_video") or []):
@@ -383,6 +484,7 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
         for i in subindo[:2]:
             linhas.append({
                 "acao": "EMPURRE HOJE",
+                "id": i.get("id"),
                 "link": i.get("link"), "capa": i.get("capa"),
                 "texto": '"%s" largou %sx acima do normal (%s views em %sh). '
                          "Responda os comentários e grave a parte 2 enquanto sobe."
@@ -410,6 +512,7 @@ def pauta(largada_, refazer_, monet, vendas_=None, quantos=8):
     for i in escolhidos:
         linhas.append({
             "acao": "REFAÇA",
+            "id": i.get("id"),
             "link": i.get("link"), "capa": i.get("capa"),
             "texto": '"%s" só fez %s views, mas %s (%.2f%%, %sx a sua mediana). '
                      "O assunto passou no teste; troque capa e gancho e poste de novo."

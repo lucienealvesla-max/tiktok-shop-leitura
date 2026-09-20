@@ -114,6 +114,12 @@ ol li{margin:9px 0}
 /* DE ONDE SAIU, sempre junto: conselho que ela nao consegue conferir, com o
    tempo, ela para de seguir. */
 .pauta .fonte{font-size:12px;color:var(--fraco);margin-top:3px;font-family:var(--dado)}
+/* O roteiro de IA, dobrado: summary como rotulo, texto como veio. */
+.roteiro{margin-top:8px}
+.roteiro summary{cursor:pointer;font-family:var(--tecnica);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--rosa)}
+.roteiro pre{white-space:pre-wrap;font-family:var(--corpo);font-size:14px;line-height:1.5;
+  background:var(--painel2);border:1px solid var(--sulco);border-radius:8px;padding:12px;margin:8px 0 0}
 /* A menção de marca é mais comprida que "22h", que foi para o que a coluna
    original de 104px foi medida. */
 .largo .linha .nome{width:170px}
@@ -220,9 +226,10 @@ function blocoCobertura(c){
     'leitura de verdade, então esses não misturam.</div></div>';
 }
 
-function painelPauta(p){
+function painelPauta(p, roteiros, tk){
   if(!p || !(p.itens || []).length) return "";
-  return '<h2>O que fazer amanhã</h2><div class="cartao">' +
+  roteiros = roteiros || {};
+  var h = '<h2>O que fazer amanhã</h2><div class="cartao">' +
     '<div class="sub">O resto da tela mostra <b>o que aconteceu</b>. Isto aqui é ' +
     'a tradução: o que dá para fazer com isso amanhã de manhã. Cada linha diz de ' +
     'onde saiu — conselho sem origem não se confere, e o que não se confere não ' +
@@ -234,9 +241,44 @@ function painelPauta(p){
       var alvo = (i.link || i.capa)
         ? videoNome({titulo: i.texto, link: i.link, capa: i.capa}, true)
         : '<div class="texto">' + esc(i.texto) + '</div>';
+      /* O ROTEIRO DE IA (fase C.4), dobrado sob a linha: quem quer le, quem
+         nao quer nao paga com rolagem. */
+      var r = i.id && roteiros[i.id];
+      var rot = r
+        ? '<details class="roteiro"><summary>Roteiro pronto (' + esc(r.dia || '') + ')</summary>' +
+          '<pre>' + esc(r.texto) + '</pre></details>'
+        : '';
       return '<div class="pauta"><div class="acao">' + esc(i.acao) + '</div>' +
-        alvo + '<div class="fonte">' + esc(i.de_onde) + '</div></div>';
-    }).join("") + '</div>';
+        alvo + '<div class="fonte">' + esc(i.de_onde) + '</div>' + rot + '</div>';
+    }).join("");
+  if(tk && !tk.agente_ia){
+    h += '<div class="sub">Roteiro pronto para gravar por IA: defina <code>agente_ia</code> na ' +
+      'configuração do add-on (ex.: <code>conversation.google_ai_conversation</code>). Três por dia, ' +
+      'para os vídeos desta lista.</div>';
+  }
+  return h + '</div>';
+}
+
+/* O PLANO DE GRAVACAO DE HOJE (fase C.3): quantos videos, e de que tipo. O
+   tamanho e a cadencia dela, medida - nao um numero de manual. */
+function painelPlano(pl){
+  if(!pl || !(pl.itens || []).length) return "";
+  var cor = {"campeão": "bom", "acelerando": "bom", "aposta": "", "refazer": "", "novo": ""};
+  var h = '<h2>Plano de gravação de hoje</h2><div class="cartao">' +
+    '<div class="sub"><b>' + n(pl.quantos) + ' vídeos</b> — o seu ritmo do mês (mediana de ' +
+    n(pl.cadencia) + ' por dia). ' + n(pl.campeoes) + ' campeão(ões), ' + n(pl.apostas) +
+    ' aposta(s), ' + n(pl.refazer) + ' para refazer, ' + n(pl.novos) + ' novo(s).' +
+    (pl.sem_vendas ? ' <b>Sem relatório de vendas na pasta</b>: os campeões viraram "novo" — com o ' +
+      'relatório, metade da lista passa a ser o que já vende.' : '') + '</div>' +
+    '<table><tr><th>#</th><th>Tipo</th><th>Gravar</th><th>Por quê</th></tr>' +
+    pl.itens.map(function(i, k){
+      var texto = i.link
+        ? '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.texto) + '</a>'
+        : esc(i.texto);
+      return '<tr><td class="n">' + (k + 1) + '</td><td class="' + (cor[i.tipo] || '') + '">' +
+        esc(i.tipo) + '</td><td>' + texto + '</td><td class="sub">' + esc(i.motivo || '') + '</td></tr>';
+    }).join('') + '</table></div>';
+  return h;
 }
 
 /* POR QUE NAO HA SEGUIDORES. Um traco mudo parece defeito; o motivo vem
@@ -415,6 +457,32 @@ function painelVendas(v){
       '<div class="sub">"Por mil views" só aparece quando a fonte liga a venda ao vídeo — é a ' +
       'medida para decidir o que gravar de novo.</div>';
   }
+  /* ---------- aceleracao e comissao por produto (fase C.2) ---------- */
+  var ac = v.produtos_acelerando || [], cm = v.comissao_mudou || [];
+  if(v.semanas_comparaveis){
+    if(ac.length){
+      h += '<div class="rotulo" style="margin-top:14px">Produtos acelerando (esta semana × anterior)</div>' +
+        barras(ac.map(function(x){
+          return {rotulo: x.produto, valor: x.vezes,
+                  texto: x.pedidos_semana + " × " + x.pedidos_anterior + " ped. (" + x.vezes + "x)"};
+        }), function(i){ return i.valor >= 2; });
+    }
+    if(cm.length){
+      h += '<div class="rotulo" style="margin-top:14px">Comissão por pedido mudou</div>' +
+        '<table><tr><th>Produto</th><th class="n">Agora</th><th class="n">Antes</th><th class="n">Variação</th></tr>' +
+        cm.map(function(x){
+          return '<tr><td>' + esc(x.produto) + '</td><td class="n">' + reais(x.por_pedido_agora) + '</td>' +
+            '<td class="n">' + reais(x.por_pedido_antes) + '</td>' +
+            '<td class="n ' + (x.variacao_pct >= 0 ? 'bom' : '') + '">' + (x.variacao_pct >= 0 ? '+' : '') + n(x.variacao_pct, 0) + '%</td></tr>';
+        }).join('') + '</table>';
+    }
+    if(!ac.length && !cm.length){
+      h += '<div class="sub" style="margin-top:10px">Duas semanas comparáveis; nenhum produto acelerou nem mudou de comissão.</div>';
+    }
+  } else if(v.tem_dados){
+    h += '<div class="sub" style="margin-top:10px">Aceleração e mudança de comissão por produto aparecem quando houver ' +
+      'duas semanas de vendas na pasta (semana × anterior).</div>';
+  }
   var lidas = fontes.map(function(f){
     return esc(f.arquivo) + ' (' + n(f.linhas) + ((f.faltam || []).length ? ', sem ' + f.faltam.map(esc).join('/') : '') + ')';
   }).join(' · ');
@@ -577,7 +645,8 @@ function desenhar(d){
   var h = blocoPerfis(tk);
   h += blocoCobertura(d.cobertura);
   h += blocoEstado(d, tk);
-  h += painelPauta(d.pauta);
+  h += painelPauta(d.pauta, d.roteiros, tk);
+  h += painelPlano(d.plano_do_dia);
   h += painelVendas(d.vendas);
   h += painelMonetizacao(d.monetizacao);
 

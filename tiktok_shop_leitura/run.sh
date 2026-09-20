@@ -11,6 +11,8 @@ export TIKTOK_SHOP_HORA="$(bashio::config 'hora_da_leitura')"
 # O aviso no celular (fase C.1): hora e servicos, separados por virgula.
 export TIKTOK_SHOP_HORA_AVISO="$(bashio::config 'hora_do_aviso' 2>/dev/null || echo 8)"
 export TIKTOK_SHOP_AVISAR="$(bashio::config 'avisar | join(",")' 2>/dev/null || echo "")"
+# O roteiro por IA (fase C.4): o agente de conversa do HA. Vazio = desligado.
+export TIKTOK_SHOP_AGENTE="$(bashio::config 'agente_ia' 2>/dev/null || echo "")"
 export TIKTOK_SHOP_META="$(bashio::config 'meta_mensal' 2>/dev/null || echo 0)"
 
 # A versao vem do arquivo ao lado do codigo: o build-arg do Supervisor nunca

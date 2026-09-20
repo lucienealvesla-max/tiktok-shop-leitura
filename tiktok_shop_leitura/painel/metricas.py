@@ -485,9 +485,11 @@ def vendas(linhas, fontes, videos, hoje, meta_mensal=None, quantos=10):
     if not linhas:
         return fora
 
+    # `>` e não `>=`: "últimos 7 dias" são (hoje-7, hoje]; com `>=` eram 8, e
+    # o pedido do dia 12 entrava na semana atual em vez da anterior.
     no_mes = [l for l in linhas if (l.get("quando") or "").startswith(mes)]
-    em7 = [l for l in linhas if (l.get("quando") or "") >= d7]
-    em30 = [l for l in linhas if (l.get("quando") or "") >= d30]
+    em7 = [l for l in linhas if (l.get("quando") or "") > d7]
+    em30 = [l for l in linhas if (l.get("quando") or "") > d30]
     fora["mes_comissao"] = soma(no_mes, "comissao")
     fora["mes_pedidos"] = int(soma(no_mes, "pedidos"))
     fora["mes_valor"] = soma(no_mes, "valor")
@@ -551,7 +553,7 @@ def vendas(linhas, fontes, videos, hoje, meta_mensal=None, quantos=10):
 
     # AINDA VENDE: vídeo com mais de 14 dias e pedido nos últimos 7.
     fora["ainda_vende"] = [x for x in por_video
-                           if (x.get("idade_dias") or 0) > 14 and (x.get("ultimo_pedido") or "") >= d7][:quantos]
+                           if (x.get("idade_dias") or 0) > 14 and (x.get("ultimo_pedido") or "") > d7][:quantos]
 
     # POR PRODUTO, nos últimos 30 dias: comissão, pedidos, e comissão por
     # mil views dos vídeos daquele produto (só quando há vínculo vídeo→produto).
@@ -580,12 +582,71 @@ def vendas(linhas, fontes, videos, hoje, meta_mensal=None, quantos=10):
         })
     por_produto.sort(key=lambda x: -(x["comissao"] or 0))
     fora["por_produto"] = por_produto[:quantos]
+
+    # ACELERAÇÃO E MUDANÇA DE COMISSÃO, POR PRODUTO (fase C.2). A Owra vende
+    # "alerta de produto tracionando" e "alerta de mudança de comissão"; com
+    # duas semanas de linhas na pasta isto sai da mesma tabela. Semana = 7
+    # dias até hoje; anterior = os 7 antes. Produto com menos de 2 pedidos
+    # nos dois lados não vira conclusão — 1 pedido é sorteio.
+    d14 = (hoje_dt - timedelta(days=14)).strftime("%Y-%m-%d")
+    semana = [l for l in linhas if (l.get("quando") or "") > d7]
+    anterior = [l for l in linhas if d14 < (l.get("quando") or "") <= d7]
+
+    def por_prod(ls):
+        g = {}
+        for l in ls:
+            nome = str(l.get("produto") or l.get("produto_id") or "").strip()
+            if not nome:
+                continue
+            x = g.setdefault(nome, {"pedidos": 0, "comissao": 0.0})
+            x["pedidos"] += l.get("pedidos") or 0
+            x["comissao"] += l.get("comissao") or 0
+        return g
+    agora_p, antes_p = por_prod(semana), por_prod(anterior)
+    acelerando, comissao_mudou = [], []
+    for nome, a in agora_p.items():
+        b = antes_p.get(nome) or {"pedidos": 0, "comissao": 0.0}
+        if a["pedidos"] >= 2 and a["pedidos"] > max(1, b["pedidos"]) * 1.5:
+            acelerando.append({"produto": nome, "pedidos_semana": int(a["pedidos"]),
+                               "pedidos_anterior": int(b["pedidos"]),
+                               "comissao_semana": round(a["comissao"], 2),
+                               "vezes": round(a["pedidos"] / float(max(1, b["pedidos"])), 1)})
+        if a["pedidos"] >= 2 and b["pedidos"] >= 2:
+            cpp_a = a["comissao"] / a["pedidos"]
+            cpp_b = b["comissao"] / b["pedidos"]
+            if cpp_b and abs(cpp_a - cpp_b) / cpp_b >= 0.15:
+                comissao_mudou.append({"produto": nome, "por_pedido_agora": round(cpp_a, 2),
+                                       "por_pedido_antes": round(cpp_b, 2),
+                                       "variacao_pct": round((cpp_a - cpp_b) * 100.0 / cpp_b, 1)})
+    acelerando.sort(key=lambda x: -x["vezes"])
+    comissao_mudou.sort(key=lambda x: -abs(x["variacao_pct"]))
+    fora["produtos_acelerando"] = acelerando[:quantos]
+    fora["comissao_mudou"] = comissao_mudou[:quantos]
+    fora["semanas_comparaveis"] = bool(semana) and bool(anterior)
     return fora
 
 
 # =========================================================================
 #  TUDO, E DE ONDE A TELA LÊ
 # =========================================================================
+
+def cadencia_do_mes(videos, dias=30):
+    """Mediana de vídeos por dia com publicação, nos últimos `dias`.
+
+    É o tamanho do plano de gravação (fase C.3): a lista do dia tem que caber
+    no dia dela, e o dia dela é medido, não suposto. Em 19/09/2026: mediana
+    8, de 1 a 16.
+    """
+    corte = datetime.now() - timedelta(days=dias)
+    por_dia = {}
+    for v in videos:
+        q = _quando(v.get("create_time"))
+        if q and q >= corte:
+            por_dia[q.strftime("%Y-%m-%d")] = por_dia.get(q.strftime("%Y-%m-%d"), 0) + 1
+    if not por_dia:
+        return None
+    return int(_mediana(list(por_dia.values())) or 0) or None
+
 
 def tudo(fotos, videos=None, vendas_=None):
     """Todos os painéis numa chamada só.
@@ -622,12 +683,15 @@ def tudo(fotos, videos=None, vendas_=None):
     # que não há Central conectada — e a pauta segue só com audiência.
     linhas, fontes, meta = vendas_ or ([], [], None)
     vd = vendas(linhas, fontes, videos, fotos[-1].get("dia") or "", meta_mensal=meta)
+    cad = cadencia_do_mes(videos)
     return {
         "dias_de_historico": len(fotos),
         "videos": len(videos),
+        "cadencia_dia": cad,
         # A ORDEM AQUI NÃO É A DA TELA (o dashboard.html decide), mas a pauta
         # vem primeiro por ser o único painel que sai dos outros.
         "pauta": conteudo.pauta(lg, rf, mn, vd),
+        "plano_do_dia": conteudo.plano_do_dia(vd, lg, rf, cad),
         "monetizacao": mn,
         "vendas": vd,
         "largada": lg,

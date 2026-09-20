@@ -111,6 +111,20 @@ def _vendas_do_dia():
         print("vendas: a leitura quebrou: %s" % e)
 
 
+def _roteiros_do_dia(motivo):
+    """Os roteiros de IA para os videos da pauta (fase C.4), se houver
+    agente configurado. Depois do painel pronto, antes do aviso. Nunca
+    derruba."""
+    try:
+        import roteiro
+        import tiktok
+        if not roteiro.configurado():
+            return
+        roteiro.preparar_todas(tiktok, motivo)
+    except Exception as e:
+        print("roteiro: quebrou: %s" % e)
+
+
 def _aviso_do_dia(motivo):
     """O resumo no celular, se houver servico configurado. Nunca derruba."""
     try:
@@ -154,6 +168,7 @@ def main():
             print("a leitura de recuperacao falhou: %s" % e)
         _vendas_do_dia()
         _painel_pronto(" (depois da leitura de recuperacao)")
+        _roteiros_do_dia(" (ao subir)")
 
     # O AVISO DE HOJE, se o add-on subiu depois da hora dele e ainda nao
     # avisou (aviso.py guarda o dia avisado, entao isto nao repete).
@@ -190,6 +205,7 @@ def main():
                 print("a leitura de hoje falhou: %s" % e)
             _vendas_do_dia()
             _painel_pronto(" (depois da leitura das %dh)" % HORA)
+            _roteiros_do_dia(" (depois da leitura das %dh)" % HORA)
             if HORA == HORA_AVISO:
                 _aviso_do_dia(" (depois da leitura)")
         else:
