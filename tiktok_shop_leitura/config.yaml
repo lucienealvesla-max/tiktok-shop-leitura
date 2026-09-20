@@ -1,5 +1,5 @@
 name: Leitura TikTok Shop
-version: "1.6.2"
+version: "1.7.0"
 slug: tiktok_shop_leitura
 # Link que aparece na pagina do add-on, no Home Assistant.
 url: https://github.com/lucienealvesla-max/tiktok-shop-leitura
@@ -17,6 +17,9 @@ panel_icon: mdi:chart-line
 # perdida nao se recupera depois.
 map:
   - share:rw
+# ACESSO A API DO CORE, para o aviso no celular (fase C.1): o add-on chama
+# notify.<servico> pelo Supervisor. So isso; nao le nem escreve estado do HA.
+homeassistant_api: true
 # A HORA DA LEITURA, ajustavel sem mexer no codigo. O padrao e 1h da manha, e
 # nao as 21h de antes, porque os dados dela desmentiram o palpite: ela publica
 # ate 23h56, e a leitura das 21h fechava o dia com uma a tres publicacoes ainda
@@ -24,11 +27,20 @@ map:
 # A META DE COMISSAO DO MES, em reais (fase 2). Zero = sem meta. E o numero
 # que a tela mostra no topo das vendas: quanto ja deu, quanto falta, e em
 # quanto fecha no ritmo atual.
+# O AVISO NO CELULAR (fase C.1): `avisar` e' a lista de servicos de
+# notificacao do Home Assistant (ex.: notify.mobile_app_sm_s928b); vazia,
+# nao avisa. `hora_do_aviso` e' quando o resumo sai - 8h por padrao, e nao a
+# hora da leitura, porque ninguem quer push a 1h da manha.
 options:
   hora_da_leitura: 1
+  hora_do_aviso: 8
+  avisar: []
   meta_mensal: 0
 schema:
   hora_da_leitura: int(0,23)
+  hora_do_aviso: int(0,23)
+  avisar:
+    - str
   meta_mensal: float(0,)
 
 # Se o processo morrer, o HA sobe de novo: um relogio parado nao avisa que

@@ -51,6 +51,19 @@ def _hora_escolhida(padrao=1):
 
 HORA = _hora_escolhida()
 
+
+def _hora_do_aviso(padrao=8):
+    """A hora do resumo no celular (fase C.1). Mesmas garantias da leitura:
+    vazio ou invalido cai no padrao, nunca derruba o relogio."""
+    try:
+        h = int(str(os.environ.get("TIKTOK_SHOP_HORA_AVISO", "")).strip())
+    except (TypeError, ValueError):
+        return padrao
+    return h if 0 <= h <= 23 else padrao
+
+
+HORA_AVISO = _hora_do_aviso()
+
 # O Pi 4 nao tem RTC (relogio de tempo real): ao subir o container, o horario
 # pode estar errado ate o NTP acertar. E time.sleep() e MONOTONICO no Linux -
 # uma correcao de relogio no meio de um sono longo nao muda quando ele acorda.
@@ -98,6 +111,18 @@ def _vendas_do_dia():
         print("vendas: a leitura quebrou: %s" % e)
 
 
+def _aviso_do_dia(motivo):
+    """O resumo no celular, se houver servico configurado. Nunca derruba."""
+    try:
+        import aviso
+        import tiktok
+        if not aviso.configurado():
+            return
+        aviso.avisar_todas(tiktok, motivo)
+    except Exception as e:
+        print("aviso: quebrou: %s" % e)
+
+
 def _painel_pronto(motivo):
     """Deixa o painel calculado no disco, logo depois de ler.
 
@@ -130,28 +155,45 @@ def main():
         _vendas_do_dia()
         _painel_pronto(" (depois da leitura de recuperacao)")
 
+    # O AVISO DE HOJE, se o add-on subiu depois da hora dele e ainda nao
+    # avisou (aviso.py guarda o dia avisado, entao isto nao repete).
+    if datetime.now().hour >= HORA_AVISO:
+        _aviso_do_dia(" (ao subir, depois das %dh)" % HORA_AVISO)
+
     while True:
         agora = datetime.now()
-        alvo = proxima_leitura(agora)
+        # DOIS DESPERTADORES, um laco: a leitura (1h) e o aviso (8h). Dorme ate
+        # o que vier primeiro e faz so aquele; o outro fica para a volta
+        # seguinte. Se as duas horas coincidirem, a leitura vem antes do
+        # aviso - o resumo tem que sair dos dados de hoje.
+        alvo_leitura = proxima_leitura(agora, HORA)
+        alvo_aviso = proxima_leitura(agora, HORA_AVISO)
+        alvo = min(alvo_leitura, alvo_aviso)
         # O absoluto ao lado do relativo: a spec pede "21h LOCAIS", mas nada
         # no log revela o fuso do container. So o relativo ("em 623 min")
         # esconde tanto o fuso errado quanto o relogio sem hora certa; o
         # absoluto deixa isso obvio de olhar, em vez de invisivel.
-        print("proxima leitura em %.0f min (as %s)" %
-              ((alvo - agora).total_seconds() / 60,
+        print("proxima %s em %.0f min (as %s)" %
+              ("leitura" if alvo == alvo_leitura else "aviso",
+               (alvo - agora).total_seconds() / 60,
                alvo.strftime("%Y-%m-%d %Hh%M")))
         restante = (alvo - agora).total_seconds()
         while restante > 0:
             time.sleep(pedaco_de_sono(restante))
             restante = (alvo - datetime.now()).total_seconds()
-        try:
-            puxar_diario.main()
-        except Exception as e:
-            # UM DIA PERDIDO NÃO PODE DERRUBAR O RELÓGIO. Se o laço morrer,
-            # perdem-se todos os dias seguintes em vez de um só.
-            print("a leitura de hoje falhou: %s" % e)
-        _vendas_do_dia()
-        _painel_pronto(" (depois da leitura das %dh)" % HORA)
+        if alvo == alvo_leitura:
+            try:
+                puxar_diario.main()
+            except Exception as e:
+                # UM DIA PERDIDO NÃO PODE DERRUBAR O RELÓGIO. Se o laço morrer,
+                # perdem-se todos os dias seguintes em vez de um só.
+                print("a leitura de hoje falhou: %s" % e)
+            _vendas_do_dia()
+            _painel_pronto(" (depois da leitura das %dh)" % HORA)
+            if HORA == HORA_AVISO:
+                _aviso_do_dia(" (depois da leitura)")
+        else:
+            _aviso_do_dia(" (as %dh)" % HORA_AVISO)
 
 
 if __name__ == "__main__":

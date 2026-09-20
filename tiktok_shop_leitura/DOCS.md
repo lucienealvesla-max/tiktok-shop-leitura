@@ -36,6 +36,26 @@ conectada. O log avisa o que está faltando, em vez de falhar em silêncio.
   dia", que o app não tem. Precisa do escopo `user.info.stats` — veja abaixo.
 - **Serve o dashboard** pela barra lateral (marque "Mostrar na barra lateral").
 
+## O resumo do dia no celular
+
+Desde a 1.7.0 o add-on manda, **uma vez por dia**, um resumo pelo Home
+Assistant: seguidores e quanto mudaram, ritmo de views contra a regra, as
+primeiras linhas da pauta (é onde "vídeo decolou" e "produto vendeu" moram)
+e as vendas de 7 dias, se houver fonte.
+
+Na aba Configuração do add-on:
+
+- **`avisar`**: os serviços de notificação, um por linha — por exemplo
+  `notify.mobile_app_sm_s928b` (o celular com o app do Home Assistant). Vazio
+  = não avisa. Para ver os nomes: Ferramentas de desenvolvedor → Serviços →
+  digite `notify`.
+- **`hora_do_aviso`**: quando sai (padrão 8h). Não é a hora da leitura, de
+  propósito: a leitura roda à 1h, e ninguém quer push a essa hora.
+
+Um arquivo por conta guarda o dia já avisado; reiniciar o add-on não repete o
+resumo. Para testar sem esperar a hora: `python3 /app/painel/aviso.py mostrar`
+imprime o texto; `... enviar` manda agora.
+
 ## Seguidores: o escopo que a conta precisa ter
 
 O Programa de Recompensas do Criador mede seguidores, e a API só os entrega
