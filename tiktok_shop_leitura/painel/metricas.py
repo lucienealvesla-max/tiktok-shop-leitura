@@ -204,6 +204,63 @@ def ressurreicoes(fotos, idade_minima=14, fator=3.0, piso=50, por_id=None,
     return {"pronto": True, "itens": itens}
 
 
+LANCAMENTOS_DIAS = 7
+
+
+def lancamentos(fotos, videos, serie=None, por_id=None, dias=LANCAMENTOS_DIAS,
+                largada_=None, quantos=60):
+    """Todo vídeo publicado nos últimos `dias`, do mais novo para o mais
+    velho, com o que ele fez até agora.
+
+    POR QUE ISTO EXISTE (20/09/2026). Pedido dele: "mostrar os últimos vídeos
+    lançados e seu desempenho poderia englobar um período maior — para eu ver
+    o vídeo que lancei há 3 dias". A Largada olha 48 horas, de propósito
+    (comparar idades diferentes não compara nada); um vídeo de 3 dias já
+    tinha sumido da tela. Aqui a régua é outra: quanto ganhou na ÚLTIMA
+    leitura e por dia (a trajetória), e o total contra a mediana da conta —
+    duas contas que valem para qualquer idade. Para os que ainda estão na
+    janela da Largada, a comparação de largada vem junto.
+    """
+    serie = serie if serie is not None else serie_por_video(fotos)
+    por_id = por_id or {v.get("id"): v for v in videos if v.get("id")}
+    agora = datetime.now()
+    corte = agora - timedelta(days=dias)
+    mediana_conta = _mediana([_n(v.get("view_count")) for v in videos]) or 0
+    largada_por_id = {i.get("id"): i for i in ((largada_ or {}).get("itens") or [])}
+
+    itens = []
+    for v in videos:
+        nasceu = _quando(v.get("create_time"))
+        if not nasceu or nasceu < corte:
+            continue
+        vid = v.get("id")
+        pontos = serie.get(vid) or []
+        ganhos = _ganhos_diarios(pontos)
+        views = _n(v.get("view_count"))
+        horas = (agora - nasceu).total_seconds() / 3600.0
+        lg = largada_por_id.get(vid) or {}
+        itens.append(dict(_identidade(v), **{
+            "id": vid,
+            "publicado_em": nasceu.strftime("%Y-%m-%d %H:%M"),
+            "horas": round(horas, 1),
+            "idade_dias": round(horas / 24.0, 1),
+            "views": views,
+            "leituras": len(pontos),
+            "ganho_ultimo": ganhos[-1][1] if ganhos else None,
+            "ganho_por_dia": round(ganhos[-1][2], 1) if ganhos else None,
+            "vezes_a_mediana": round(views / mediana_conta, 2) if mediana_conta else None,
+            "vezes_a_largada": lg.get("vezes_a_largada"),
+            "de_loja": _de_loja(v),
+            "duracao": _n(v.get("duration")),
+            "_ts": nasceu.timestamp(),
+        }))
+    itens.sort(key=lambda x: -x["_ts"])
+    for x in itens:
+        x.pop("_ts", None)
+    return {"dias": dias, "mediana_conta": mediana_conta, "total": len(itens),
+            "itens": itens[:quantos]}
+
+
 # =========================================================================
 #  MONETIZAÇÃO
 # =========================================================================
@@ -695,6 +752,7 @@ def tudo(fotos, videos=None, vendas_=None):
         "monetizacao": mn,
         "vendas": vd,
         "largada": lg,
+        "lancamentos": lancamentos(fotos, videos, serie=serie, por_id=por_id, largada_=lg),
         "acelerando": acelerando(fotos, por_id=por_id, serie=serie),
         "ressurreicoes": ressurreicoes(fotos, por_id=por_id, serie=serie),
         "refazer": rf,

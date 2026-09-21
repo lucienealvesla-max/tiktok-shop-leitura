@@ -650,34 +650,46 @@ function desenhar(d){
   h += painelVendas(d.vendas);
   h += painelMonetizacao(d.monetizacao);
 
-  /* ---------- largada: as primeiras horas ---------- */
+  /* ---------- lancamentos: os ultimos 7 dias, com a largada dentro ---------- */
+  var lc = d.lancamentos || {};
   var lg = d.largada || {};
-  h += '<h2>Largada — as primeiras horas</h2>';
-  if(!lg.pronto){
-    h += esperando(lg.faltam, "Saber se um vídeo novo largou bem");
-  } else if(!(lg.itens || []).length){
-    h += '<div class="cartao"><div class="sub">Nenhum vídeo publicado nas últimas ' +
-      (lg.janela_horas || 48) + ' horas foi lido ainda. Assim que houver, aparece aqui.' +
-      '</div></div>';
+  h += '<h2>Lançamentos — últimos ' + (lc.dias || 7) + ' dias</h2>';
+  if(!(lc.itens || []).length){
+    h += '<div class="cartao"><div class="sub">Nenhum vídeo publicado nos últimos ' +
+      (lc.dias || 7) + ' dias foi lido ainda.</div></div>';
   } else {
-    h += '<div class="cartao"><div class="sub">Reagir a um vídeo que está subindo só ' +
-      'vale <b>enquanto ele sobe</b>: responder comentário, fixar comentário, gravar a ' +
-      'parte 2, empurrar o link. Cada vídeo é comparado com os outros da mesma <b>idade</b> ' +
-      '— 14 horas contra 28 horas não compara nada, porque o mais velho sempre teria mais. ' +
-      'A janela em que vale insistir é de uns 2 dias: é o que o vídeo dela leva para juntar ' +
-      '80% das views que vai ter.' +
-      '</div><table><tr><th>Vídeo</th><th class="n">Idade</th>' +
-      '<th class="n">Views</th><th class="n">Contra a faixa</th></tr>' +
-      lg.itens.map(function(x){
-        var comp = (x.vezes_a_largada === null || x.vezes_a_largada === undefined)
-          ? '<span class="sub">só ' + x.comparaveis + ' na faixa</span>'
-          : (x.vezes_a_largada >= 1.5 ? '<b class="bom">' + x.vezes_a_largada + 'x</b>'
-                                      : x.vezes_a_largada + 'x');
+    h += '<div class="cartao"><div class="sub">Todo vídeo da semana, do mais novo para o mais ' +
+      'velho. <b>Ganhou</b> é o que entrou desde a leitura anterior (e por dia) — a trajetória, ' +
+      'que o app não mostra. <b>× mediana</b> compara com os ' + n(lc.mediana_conta) +
+      ' views do vídeo típico da conta. Nas primeiras 48 h aparece também a <b>largada</b>: ' +
+      'contra vídeos da mesma idade, porque 14 h e 28 h não se comparam. Reagir só vale ' +
+      'enquanto sobe: responder comentário, fixar o link, gravar a parte 2.</div>' +
+      '<table><tr><th>Vídeo</th><th class="n">Idade</th><th class="n">Views</th>' +
+      '<th class="n">Ganhou</th><th class="n">× mediana</th></tr>' +
+      lc.itens.map(function(x){
+        var idade = x.horas < 48 ? x.horas + 'h' : n(x.idade_dias, 1) + 'd';
+        var ganhou = (x.ganho_ultimo === null || x.ganho_ultimo === undefined)
+          ? '<span class="sub">1ª leitura</span>'
+          : '<b class="' + (x.ganho_ultimo > 0 ? 'bom' : '') + '">+' + n(x.ganho_ultimo) + '</b>' +
+            (x.ganho_por_dia !== null && x.ganho_por_dia !== undefined
+              ? '<span class="quando">' + n(x.ganho_por_dia) + '/dia</span>' : '');
+        var med = (x.vezes_a_mediana === null || x.vezes_a_mediana === undefined)
+          ? '—'
+          : (x.vezes_a_mediana >= 1.5 ? '<b class="bom">' + n(x.vezes_a_mediana, 1) + 'x</b>'
+                                      : n(x.vezes_a_mediana, 1) + 'x');
+        var larg = (x.vezes_a_largada !== null && x.vezes_a_largada !== undefined)
+          ? '<span class="quando">largada ' + (x.vezes_a_largada >= 1.5 ? '<b class="bom">' : '') +
+            n(x.vezes_a_largada, 1) + 'x' + (x.vezes_a_largada >= 1.5 ? '</b>' : '') + '</span>'
+          : '';
         return '<tr><td>' + videoNome(x, true) + '</td>' +
-          '<td class="n">' + x.horas + 'h</td>' +
+          '<td class="n">' + idade + (x.de_loja ? '' : '<span class="quando">sem link</span>') + '</td>' +
           '<td class="n">' + n(x.views) + '</td>' +
-          '<td class="n">' + comp + '</td></tr>';
-      }).join("") + '</table></div>';
+          '<td class="n">' + ganhou + '</td>' +
+          '<td class="n">' + med + larg + '</td></tr>';
+      }).join("") + '</table>' +
+      (lc.total > lc.itens.length
+        ? '<div class="sub">Mostrando ' + lc.itens.length + ' de ' + lc.total + '.</div>' : '') +
+      '</div>';
   }
 
   /* ---------- acelerando ---------- */

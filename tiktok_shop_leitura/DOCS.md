@@ -231,7 +231,10 @@ nos dados dela, o vídeo de mais de 1 minuto ganhava **de 5 a 7 vezes** mais
 que o curto — e em vídeo de loja, view é clique no produto. É por isso que
 "grave mais longo" continua na pauta, agora com o motivo certo.
 
-**Largada** — quanto o vídeo fez nas primeiras horas, comparado com os outros da
+**Lançamentos** — todo vídeo dos últimos 7 dias, do mais novo para o mais
+velho, com idade, views, quanto ganhou na última leitura (e por dia) e o total
+contra a mediana da conta. Nas primeiras 48 h aparece também a **largada**:
+quanto o vídeo fez nas primeiras horas, comparado com os outros da
 **mesma idade**. Reagir a um vídeo que está subindo só vale enquanto ele sobe —
 e a janela, medida nos dados dela, é de uns 2 dias.
 
